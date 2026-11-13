@@ -48,7 +48,7 @@ class DeduplicationService:
         merged["tags"] = sorted(list(existing_tags | incoming_tags))
 
         # 3. Ссылка на покупку билетов / сайт организатора
-        merged["org_link"] = incoming.get("org_link") or existing.org_link
+        merged["org_link"] = existing.org_link or incoming.get("org_link")
 
         # 4. Координаты (если у существующего не было, а у нового есть)
         merged["lat"] = existing.lat if existing.lat is not None else incoming.get("lat")

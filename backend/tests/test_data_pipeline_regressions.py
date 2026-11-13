@@ -118,6 +118,12 @@ async def test_replay_propagates_database_failures():
         await svc.replay_all_normalizations("test", "request")
 
 
+def test_deduplication_preserves_existing_organizer_link():
+    event = SimpleNamespace(description="Описание", tags=[], org_link="https://example.org/original", lat=None, lon=None, date_end=None, duration_min=None)
+    merged = DeduplicationService().merge_event_fields(event, {"org_link": "https://example.org/other"})
+    assert merged["org_link"] == "https://example.org/original"
+
+
 def test_age_is_not_inferred_from_arbitrary_description_numbers():
     norm = NormalizationService()
     assert norm.normalize_age_limit(None, "Концерт начинается в 19:00, билеты от 500 рублей") == 0
