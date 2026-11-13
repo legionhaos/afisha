@@ -9,3 +9,16 @@
 
 .home-bottom{grid-template-columns:1fr}
 .city-select{display:flex;align-items:center;gap:6px;color:#617366;font-size:12px}.city-select select{max-width:155px;border:1px solid #d9e2d7;background:#f7f9f5;color:#294b38;padding:8px;font-size:12px;cursor:pointer}@media(max-width:600px){.city-select span{display:none}.city-select select{max-width:120px;font-size:12px}.home-header nav{align-items:center}}
+/* City selection shares the understated visual language of the navigation. */
+.city-select{position:relative;display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:0 12px;background:#f1f5ee;border:1px solid transparent;border-radius:22px;color:#315c44;transition:background .18s,border-color .18s}
+.city-select:hover{background:#e7f0e4;border-color:#cedfcb}
+.city-select:focus-within{outline:3px solid #a3c74c;outline-offset:3px}
+.city-select .city-select-icon{width:17px;height:17px;flex:none;color:#517a5e;pointer-events:none}
+.city-select .city-select-chevron{width:14px;height:14px;flex:none;color:#63816b;pointer-events:none}
+.city-select select{appearance:none;-webkit-appearance:none;min-width:90px;max-width:150px;border:0;outline:0;background:transparent;color:#294b38;padding:10px 0;font-size:13px;font-weight:600;cursor:pointer}
+.city-select select:focus-visible{outline:0}
+@media(max-width:600px){.city-select{min-height:38px;padding:0 10px;gap:5px}.city-select select{min-width:0;max-width:115px;font-size:12px}.city-select .city-select-icon{width:15px;height:15px}}
+/* Keep all navigation controls aligned to the same visual center. */
+.home-header nav{align-items:center}
+.home-header nav>a{display:inline-flex;align-items:center;min-height:42px;line-height:1.2}
+@media(max-width:600px){.home-header{align-items:center}.home-header nav>a{min-height:38px}}
