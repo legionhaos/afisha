@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from app.api.deps import (
     get_audit_repo,
     get_catalog_service,
+    get_crawler_service,
     get_event_repo,
     get_import_service,
     get_request_id,
@@ -18,6 +19,7 @@ from app.repositories.event_repo import EventRepository
 from app.schemas.event import EventCardDTO, EventUpdateAdminDTO, PaginatedEventsResponseDTO
 from app.schemas.import_mod import ImportReportDTO
 from app.services.catalog_service import CatalogService
+from app.services.crawler_service import CrawlerService
 from app.services.import_service import ImportService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -40,6 +42,23 @@ async def import_events_file(
         filename=file.filename or "upload.csv",
         actor_id="admin_user",
         request_id=request_id,
+    )
+
+
+@router.post(
+    "/crawl",
+    summary="Запуск сбора и обновления мероприятий из внешних источников (Уровень 4: 6.5 ТЗ)",
+)
+async def crawl_external_events(
+    crawler_service: Annotated[CrawlerService, Depends(get_crawler_service)],
+    admin_token: Annotated[str, Depends(require_admin_token)],
+    request_id: Annotated[str, Depends(get_request_id)],
+    verify_urls: bool = Query(default=False, description="Проверять ли доступность ссылок на источник"),
+) -> dict[str, Any]:
+    return await crawler_service.crawl_and_import(
+        actor_id="admin_user",
+        request_id=request_id,
+        verify_urls=verify_urls,
     )
 
 
