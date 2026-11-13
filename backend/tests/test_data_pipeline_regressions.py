@@ -90,6 +90,16 @@ async def test_replay_reuses_source_and_preserves_cancellation():
     svc.event_repo.create_or_update_event.assert_not_awaited()
 
 
+def test_age_is_not_inferred_from_arbitrary_description_numbers():
+    norm = NormalizationService()
+    assert norm.normalize_age_limit(None, "Концерт начинается в 19:00, билеты от 500 рублей") == 0
+    assert norm.normalize_age_limit("для детей 8 лет") == 12
+    with pytest.raises(ValueError):
+        norm.normalize_age_limit("неизвестно")
+    with pytest.raises(ValueError):
+        norm.normalize_age_limit(-1)
+
+
 def test_hard_duration_filter_excludes_unknown_duration():
     repo = EventRepository(AsyncMock())
     clauses = repo._build_base_filters(EventSearchFilterDTO(max_duration_min=90))

@@ -140,13 +140,16 @@ class NormalizationService:
         if isinstance(raw_age, int):
             age_val = raw_age
         elif isinstance(raw_age, str) and raw_age.strip():
+            if re.match(r"\s*-\s*\d", raw_age):
+                raise ValueError("Возрастное ограничение не может быть отрицательным")
             match = AGE_REGEX.search(raw_age)
-            if match:
-                age_val = int(match.group(1))
-        elif context_text:
-            match = AGE_REGEX.search(context_text)
-            if match:
-                age_val = int(match.group(1))
+            if not match:
+                raise ValueError("Не удалось разобрать возрастное ограничение")
+            age_val = int(match.group(1))
+        elif raw_age is not None and not isinstance(raw_age, str):
+            raise ValueError("Некорректное возрастное ограничение")
+        if age_val < 0 or age_val > 18:
+            raise ValueError("Возрастное ограничение вне диапазона 0–18")
 
         # Приведение к допустимым значениям 0, 6, 12, 16, 18
         if age_val <= 0:
