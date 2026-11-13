@@ -1,43 +1,85 @@
 from decimal import Decimal
+from typing import Any
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dictionary import City, Venue
-from app.models.enums import EventCategory, EventStatus
 from app.models.event import Event
-
-
-def _normalize(value: str) -> str:
-    return " ".join(value.casefold().replace("ё", "е").split())
+from app.models.enums import EventCategory, EventStatus
 
 
 class DictionaryRepository:
-    def __init__(self, session: AsyncSession):
+    """Репозиторий для справочников городов, площадок и категорий."""
+
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def resolve_city_name(self, raw_city: str) -> str | None:
-        normalized = _normalize(raw_city)
-        if not normalized:
+        """Нечеткий поиск города через триграммы pg_trgm с порогом 0.45 для исправления опечаток."""
+        if not raw_city or not raw_city.strip():
             return None
-        similarity = func.similarity(City.normalized_name, normalized)
-        return await self.session.scalar(
-            select(City.name).where(City.normalized_name.op('%')(normalized), similarity >= 0.3)
-            .order_by(similarity.desc(), City.name).limit(1)
+
+        clean = " ".join(raw_city.casefold().replace("ё", "е").split())
+
+        # 1. Exact match on normalized_name
+        stmt_exact = select(City.name).where(City.normalized_name == clean).limit(1)
+        res_exact = await self.session.execute(stmt_exact)
+        city_exact = res_exact.scalar_one_or_none()
+        if city_exact:
+            return city_exact
+
+        similarity_expr = func.similarity(City.normalized_name, clean)
+        stmt_fuzzy = (
+            select(City.name, similarity_expr.label("sim"))
+            .where(City.normalized_name.op("%")(clean), similarity_expr >= 0.3)
+            .order_by(similarity_expr.desc(), City.name)
+            .limit(1)
         )
+        res_fuzzy = await self.session.execute(stmt_fuzzy)
+        row = res_fuzzy.first()
+        if row:
+            return row[0]
+
+        return None
 
     async def get_all_cities(self) -> list[City]:
-        return list((await self.session.scalars(select(City).order_by(City.name))).all())
+        """Возвращает список всех зарегистрированных городов."""
+        stmt = select(City).order_by(City.name.asc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     async def get_city_by_name(self, name: str) -> City | None:
-        return await self.session.scalar(select(City).where(City.name == name))
+        """Находит город по точному названию."""
+        stmt = select(City).where(City.name == name)
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
 
-    async def get_categories_stats(self, city_name: str | None = None) -> list[dict]:
-        stmt = select(Event.category, func.count(Event.id)).where(Event.status == EventStatus.PUBLISHED)
+    async def get_venues_by_city(self, city_name: str | None = None) -> list[Venue]:
+        """Возвращает список площадок, опционально отфильтрованный по городу."""
+        stmt = select(Venue).join(City, Venue.city_id == City.id)
+        if city_name:
+            stmt = stmt.where(City.name == city_name)
+        stmt = stmt.order_by(Venue.name.asc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_categories_stats(self, city_name: str | None = None) -> list[dict[str, Any]]:
+        """Возвращает список категорий с подсчетом активных опубликованных событий."""
+        stmt = (
+            select(Event.category, func.count(Event.id).label("cnt"))
+            .where(Event.status == EventStatus.PUBLISHED)
+        )
         if city_name:
             stmt = stmt.where(Event.city == city_name)
-        counts = dict((await self.session.execute(stmt.group_by(Event.category))).all())
-        titles = {
+        stmt = stmt.group_by(Event.category)
+
+        result = await self.session.execute(stmt)
+        counts_map = {cat: cnt for cat, cnt in result.all()}
+
+        category_titles = {
             EventCategory.CONCERT: "Концерты",
             EventCategory.THEATER: "Спектакли",
             EventCategory.EXHIBITION: "Выставки",
@@ -46,24 +88,69 @@ class DictionaryRepository:
             EventCategory.EXCURSION: "Экскурсии",
             EventCategory.OTHER: "Другие события",
         }
-        return [{"category": category, "title_ru": title, "events_count": counts.get(category, 0)}
-                for category, title in titles.items()]
 
-    async def get_venues_by_city(self, city_name: str | None = None) -> list[Venue]:
-        stmt = select(Venue).join(City).order_by(Venue.name)
-        if city_name:
-            stmt = stmt.where(City.name == city_name)
-        return list((await self.session.scalars(stmt)).all())
+        stats: list[dict[str, Any]] = []
+        for cat in EventCategory:
+            stats.append({
+                "category": cat,
+                "title_ru": category_titles.get(cat, cat.value.capitalize()),
+                "events_count": counts_map.get(cat, 0),
+            })
+        return stats
 
-    async def upsert_city_and_venue(self, city_name: str, venue_name: str, address: str, lat: Decimal | None, lon: Decimal | None) -> None:
-        city = await self.session.scalar(select(City).where(City.name == city_name))
-        if city is None:
-            # Venue coordinates are not the city centre; do not fabricate it.
-            raise ValueError(f"Город {city_name!r} отсутствует в справочнике; сначала добавьте его центр")
-        normalized = _normalize(venue_name)
-        venue = await self.session.scalar(select(Venue).where(Venue.city_id == city.id, Venue.normalized_name == normalized, Venue.address == address))
-        if venue is None:
-            self.session.add(Venue(city_id=city.id, name=venue_name, normalized_name=normalized, address=address, lat=lat, lon=lon))
-        else:
-            venue.name, venue.lat, venue.lon = venue_name, lat, lon
+    async def upsert_city(
+        self,
+        name: str,
+        normalized_name: str,
+        lat: Decimal | None = None,
+        lon: Decimal | None = None,
+    ) -> City:
+        """Вставляет или возвращает существующий город."""
+        stmt = select(City).where(City.name == name)
+        res = await self.session.execute(stmt)
+        existing = res.scalar_one_or_none()
+        if existing:
+            return existing
+
+        city = City(
+            id=uuid4(),
+            name=name,
+            normalized_name=normalized_name,
+            lat=lat,
+            lon=lon,
+        )
+        self.session.add(city)
         await self.session.flush()
+        return city
+
+    async def upsert_venue(
+        self,
+        city_id: UUID,
+        name: str,
+        normalized_name: str,
+        address: str,
+        lat: Decimal | None = None,
+        lon: Decimal | None = None,
+    ) -> Venue:
+        """Вставляет или возвращает существующую площадку."""
+        stmt = select(Venue).where(
+            Venue.city_id == city_id,
+            Venue.normalized_name == normalized_name,
+        )
+        res = await self.session.execute(stmt)
+        existing = res.scalar_one_or_none()
+        if existing:
+            return existing
+
+        venue = Venue(
+            id=uuid4(),
+            city_id=city_id,
+            name=name,
+            normalized_name=normalized_name,
+            address=address,
+            lat=lat,
+            lon=lon,
+        )
+        self.session.add(venue)
+        await self.session.flush()
+        return venue

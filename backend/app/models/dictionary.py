@@ -1,36 +1,85 @@
 from decimal import Decimal
-
-from sqlalchemy import ForeignKey, Index, Numeric, String, Text
+from uuid import UUID, uuid4
+from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
 
 class City(Base):
+    """Справочник городов и населенных пунктов Республики Башкортостан."""
     __tablename__ = "cities"
-    __table_args__ = (
-        Index("ix_cities_normalized_name_trgm", "normalized_name", postgresql_using="gin", postgresql_ops={"normalized_name": "gin_trgm_ops"}),
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    name: Mapped[str] = mapped_column(
+        String(120),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    normalized_name: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        index=True,
+    )
+    lat: Mapped[Decimal | None] = mapped_column(
+        Numeric(9, 6),
+        nullable=True,
+    )
+    lon: Mapped[Decimal | None] = mapped_column(
+        Numeric(9, 6),
+        nullable=True,
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
-    normalized_name: Mapped[str] = mapped_column(String(120), index=True)
-    center_lat: Mapped[Decimal] = mapped_column(Numeric(9, 6))
-    center_lon: Mapped[Decimal] = mapped_column(Numeric(9, 6))
-    venues: Mapped[list["Venue"]] = relationship(back_populates="city")
+    venues: Mapped[list["Venue"]] = relationship(
+        back_populates="city",
+        cascade="all, delete-orphan",
+    )
 
 
 class Venue(Base):
+    """Справочник площадок проведения культурных мероприятий."""
     __tablename__ = "venues"
     __table_args__ = (
-        Index("ix_venues_normalized_name_trgm", "normalized_name", postgresql_using="gin", postgresql_ops={"normalized_name": "gin_trgm_ops"}),
+        UniqueConstraint("city_id", "normalized_name", name="uq_venue_city_norm_name"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"), index=True)
-    name: Mapped[str] = mapped_column(String(255))
-    normalized_name: Mapped[str] = mapped_column(String(255), index=True)
-    address: Mapped[str] = mapped_column(Text)
-    lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
-    lon: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
-    city: Mapped[City] = relationship(back_populates="venues")
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    city_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("cities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    normalized_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+    address: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    lat: Mapped[Decimal | None] = mapped_column(
+        Numeric(9, 6),
+        nullable=True,
+    )
+    lon: Mapped[Decimal | None] = mapped_column(
+        Numeric(9, 6),
+        nullable=True,
+    )
+
+    city: Mapped["City"] = relationship(back_populates="venues")

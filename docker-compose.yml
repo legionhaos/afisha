@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: bash_afisha_db
+    environment:
+      POSTGRES_DB: afisha
+      POSTGRES_USER: afisha
+      POSTGRES_PASSWORD: afisha_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afisha -d afisha"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bash_afisha_backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://afisha:afisha_password@db:5432/afisha
+      CHECKPOINT_DB_URI: postgresql://afisha:afisha_password@db:5432/afisha
+      LLM_BASE_URL: https://api.openai.com/v1
+      LLM_API_KEY: mock-api-key
+      LLM_MODEL_NAME: gpt-4o-mini
+      EMBEDDING_MODEL_NAME: text-embedding-3-small
+      LLM_TIMEOUT_SEC: "6.0"
+      MAX_AGENT_STEPS: "5"
+      MAX_DAILY_USER_BUDGET_RUB: "25.0"
+      MAX_DIALOG_COST_RUB: "5.0"
+      ADMIN_API_TOKEN: admin_secret_token_123
+      LANGGRAPH_STRICT_MSGPACK: "true"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: bash_afisha_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
