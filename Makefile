@@ -1,4 +1,4 @@
-.PHONY: help up down build logs migrate test test-local bench openapi clean
+.PHONY: help up down build logs migrate seed test test-local bench openapi clean
 
 help:
 	@echo "Афиша культуры Башкортостана — Команды разработки"
@@ -8,6 +8,7 @@ help:
 	@echo "make build       - Пересборка Docker контейнеров"
 	@echo "make logs        - Просмотр логов бэкенда в реальном времени"
 	@echo "make migrate     - Применение миграций Alembic"
+	@echo "make seed        - Начальное наполнение БД реальными мероприятиями Башкортостана"
 	@echo "make test        - Запуск тестов pytest в локальном окружении"
 	@echo "make bench       - Запуск бенчмарка качества ИИ-агента (22 контрольных запроса)"
 	@echo "make openapi     - Экспорт актуальной схемы OpenAPI 3.1 в openapi.json"
@@ -27,6 +28,9 @@ logs:
 
 migrate:
 	cd backend && .venv/bin/alembic upgrade head
+
+seed:
+	cd backend && .venv/bin/python scripts/seed_demo_data.py
 
 test:
 	cd backend && .venv/bin/pytest -v
