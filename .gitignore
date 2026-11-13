@@ -22,30 +22,38 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtual Environments
+# Virtual environments
 .venv/
 venv/
 ENV/
 env/
 
-# IDE
+# IDE / OS
 .idea/
 .vscode/
 *.swp
 *.swo
+.DS_Store
+Thumbs.db
 
-# Environment variables
+# Environment variables and secrets
 .env
+.env.*
 !.env.example
+**/.env
+**/.env.*
+!**/.env.example
 
-# Testing
+# Testing / logs
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Logs
 *.log
 
-# OS
-.DS_Store
-Thumbs.db
+# Frontend / build output
+node_modules/
+.next/
+*.tsbuildinfo
+
+# Local agent skills
+.cline/
