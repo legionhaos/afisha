@@ -375,17 +375,22 @@ class ImportService:
     def _parse_file_to_rows(self, file_bytes: bytes, filename: str) -> list[dict[str, Any]]:
         """Разбирает CSV или JSON в список словарей."""
         filename_lower = filename.lower()
+        content = file_bytes.decode("utf-8-sig")
         if filename_lower.endswith(".json"):
-            content_str = file_bytes.decode("utf-8-sig")
-            data = json.loads(content_str)
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict) and "events" in data:
-                return data["events"]
-            return [data]
-        else:
-            # CSV parsing
-            content_str = file_bytes.decode("utf-8-sig")
-            f = io.StringIO(content_str)
-            reader = csv.DictReader(f)
-            return [dict(row) for row in reader]
+            data = json.loads(content)
+            if isinstance(data, dict):
+                data = data["events"] if "events" in data else [data]
+            if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+                raise ValueError("JSON должен содержать объект или список объектов мероприятий")
+            return data
+        if not filename_lower.endswith(".csv"):
+            raise ValueError("Поддерживаются только файлы CSV и JSON")
+        reader = csv.DictReader(io.StringIO(content, newline=""))
+        if not reader.fieldnames or any(not name or not name.strip() for name in reader.fieldnames):
+            raise ValueError("CSV должен содержать заголовки столбцов")
+        if len(set(reader.fieldnames)) != len(reader.fieldnames):
+            raise ValueError("CSV содержит повторяющиеся заголовки")
+        rows = [dict(row) for row in reader]
+        if any(None in row for row in rows):
+            raise ValueError("CSV содержит больше значений, чем заголовков")
+        return rows

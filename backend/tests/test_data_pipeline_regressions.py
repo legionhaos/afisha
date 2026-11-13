@@ -34,6 +34,18 @@ def service():
     return svc
 
 
+@pytest.mark.parametrize("filename,content", [
+    ("events.json", b'{"events": "not a list"}'),
+    ("events.json", b'[1, 2]'),
+    ("events.csv", b'title,title\nfirst,second\n'),
+    ("events.csv", b'title\na,b\n'),
+    ("events.txt", b'title\nevent\n'),
+])
+def test_invalid_import_file_is_rejected(filename, content):
+    with pytest.raises(ValueError):
+        service()._parse_file_to_rows(content, filename)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("price", ["до 1200", "от 300", "неизвестно", "-500", "500.50", "900-300", "бесплатно 500"])
 async def test_incomplete_prices_are_not_published(price):
