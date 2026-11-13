@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,17 +52,18 @@ class RawRecordRepository:
         batch_size: int = 100,
     ) -> AsyncGenerator[list[RawEventRecord], None]:
         """Потоковая выгрузка сырых записей для переигрывания нормализации."""
-        offset = 0
+        if batch_size < 1:
+            raise ValueError("batch_size должен быть положительным")
+        cursor = None
         while True:
-            stmt = (
-                select(RawEventRecord)
-                .order_by(RawEventRecord.created_at.asc())
-                .offset(offset)
-                .limit(batch_size)
-            )
+            stmt = (select(RawEventRecord)
+                    .order_by(RawEventRecord.created_at.asc(), RawEventRecord.id.asc())
+                    .limit(batch_size))
+            if cursor is not None:
+                stmt = stmt.where(tuple_(RawEventRecord.created_at, RawEventRecord.id) > tuple_(*cursor))
             result = await self.session.execute(stmt)
             batch = list(result.scalars().all())
             if not batch:
                 break
+            cursor = (batch[-1].created_at, batch[-1].id)
             yield batch
-            offset += batch_size
