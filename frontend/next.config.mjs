@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async rewrites() {
-    const backend = process.env.BACKEND_URL || 'http://localhost:8000';
-    return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];
-  },
+  // A dedicated runtime route proxies only the public API endpoints needed by the site.
 };
 export default nextConfig;

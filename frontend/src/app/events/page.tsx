@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { isDemoMode, listEvents } from '@/lib/api-client';
 import type { Event } from '@/types/api';
-import SiteHeader from '@/components/SiteHeader';
+import SiteHeader, { useSelectedCity } from '@/components/SiteHeader';
 import PixelOrnament from '@/components/PixelOrnament';
 import { EventCard } from '@/components/EventCard';
 import AgentChatDrawer from '@/components/AgentChatDrawer';
@@ -24,6 +24,7 @@ const directions = [
 function EventsContent() {
   const params = useSearchParams();
   const category = params.get('category') || '';
+  const city = useSelectedCity();
   const [items,setItems] = useState<Event[]>([]);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState(false);
@@ -32,9 +33,9 @@ function EventsContent() {
     if (!category) return;
     let active = true;
     setLoading(true); setError(false);
-    listEvents({ category }).then(result => { if(active) setItems(result.items); }).catch(() => { if(active) setError(true); }).finally(() => { if(active) setLoading(false); });
+    listEvents({ category, city: city || undefined }).then(result => { if(active) setItems(result.items); }).catch(() => { if(active) setError(true); }).finally(() => { if(active) setLoading(false); });
     return () => { active=false; };
-  }, [category,attempt]);
+  }, [category,city,attempt]);
   return <main className="hybrid-page"><SiteHeader/><div className="inner-page"><Link className="inner-back" href={category ? '/events' : '/'}>← {category ? 'Все направления' : 'Главная'}</Link><p className="home-kicker">АФИША РЕСПУБЛИКИ</p><h1>{category || 'Направления'}<span>.</span></h1>
     {!category ? <section className="direction-section events-directions" aria-label="Направления афиши"><div className="direction-grid">{directions.map(direction => <Link key={direction.name} className="direction-card" href={direction.href || `/events?category=${encodeURIComponent(direction.name)}`}><div className="direction-art" aria-hidden="true"><PixelOrnament className="direction-ornament"/><span>{direction.mark} / 07</span></div><div className="direction-copy"><small>АФИША БАШКОРТОСТАНА</small><h2>{direction.name}</h2><p>{direction.text}</p><span className="direction-link">Открыть раздел ↗</span></div></Link>)}</div></section> : <section className="category-results" aria-label={`События: ${category}`}>
       {loading ? <div className="catalog-status" role="status">Загружаем события…</div> : error ? <div className="catalog-empty" role="alert"><h2>Не удалось загрузить события</h2><button className="catalog-button catalog-button-secondary" onClick={()=>setAttempt(n=>n+1)}>Повторить</button></div> : items.length ? <div className="home-event-grid">{items.map(event => <EventCard key={event.id} event={event}/>)}</div> : <div className="category-empty"><h2>Пока нет событий</h2><p>В этом разделе ещё нет мероприятий. Попробуйте выбрать другое направление.</p><Link href="/events">Все направления ↗</Link></div>}

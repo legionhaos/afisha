@@ -8,3 +8,4 @@
 
 
 .home-bottom{grid-template-columns:1fr}
+.city-select{display:flex;align-items:center;gap:6px;color:#617366;font-size:12px}.city-select select{max-width:155px;border:1px solid #d9e2d7;background:#f7f9f5;color:#294b38;padding:8px;font-size:12px;cursor:pointer}@media(max-width:600px){.city-select span{display:none}.city-select select{max-width:120px;font-size:12px}.home-header nav{align-items:center}}

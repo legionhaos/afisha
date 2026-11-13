@@ -13,11 +13,13 @@ export interface ChatStreamOptions {
 
 export async function streamChat(options: ChatStreamOptions): Promise<void> {
   let response: Response;
+  const threadId = options.threadId || crypto.randomUUID();
+  options.onThreadId?.(threadId);
   try {
     response = await fetch(options.endpoint || '/api/v1/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream, application/json' },
-      body: JSON.stringify({ message: options.message, thread_id: options.threadId }),
+      body: JSON.stringify({ message: options.message, thread_id: threadId, user_identifier: `web:${threadId}` }),
       signal: options.signal,
     });
   } catch (error) {
@@ -31,6 +33,15 @@ export async function streamChat(options: ChatStreamOptions): Promise<void> {
   const handle = (data: string, event = 'message') => {
     if (done) return;
     if (data.trim() === '[DONE]' || event === 'done') { done = true; return; }
+    if (event === 'status') return;
+    if (event === 'cards') {
+      try {
+        const cards = JSON.parse(data) as Array<{ event?: { title?: string; city?: string; date_start?: string } }>;
+        const lines = cards.map(({ event: card }) => card?.title ? `• ${card.title}${card.city ? ` — ${card.city}` : ''}${card.date_start ? ` (${new Date(card.date_start).toLocaleDateString('ru-RU', { timeZone: 'Asia/Yekaterinburg' })})` : ''}` : '').filter(Boolean);
+        if (lines.length) { received = true; options.onText(`\n\n${lines.join('\n')}`); }
+      } catch { /* Ignore malformed card payloads. */ }
+      return;
+    }
     let value: unknown = data;
     try { value = JSON.parse(data); } catch { /* Plain-text SSE data. */ }
     if (event === 'error') {

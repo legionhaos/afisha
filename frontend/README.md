@@ -2,7 +2,9 @@
 
 ## Запуск
 
-Нужен Node.js 22 или новее и npm. Из папки `frontend`:
+Из корня `/Users/makarrr/Documents/кибер102/afisha` весь стек без Nginx запускается командой `docker compose up -d --build`. Сайт: http://localhost:3000, backend (только локально): http://localhost:8000/docs. Миграции запускаются при старте backend; БД хранится в Docker volume. Для тестовых данных выполните `docker compose exec -T backend python scripts/seed_hackathon_demo.py` (события вымышлены и помечены [ДЕМО]). Остановка: `docker compose down`. Это локальная демонстрация, не безопасный публичный деплой: API подписок backend не защищён, реальные данные/токены не использовать. Туннель и Telegram Mini App этой командой не настраиваются.
+
+Для отдельного запуска интерфейса нужен Node.js 22 или новее и npm. Из папки `frontend`:
 
 ```sh
 npm ci
