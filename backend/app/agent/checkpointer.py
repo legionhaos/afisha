@@ -26,13 +26,15 @@ def trim_conversation_history(
         else:
             other_msgs.append(msg)
 
-    # Оставляем последние max_messages сообщений
-    if len(other_msgs) > max_messages:
-        trimmed = other_msgs[-max_messages:]
-    else:
-        trimmed = other_msgs
-
-    return system_msgs + trimmed
+    # Preserve complete human/tool turns, even when they exceed the soft limit.
+    human_indices = [i for i, msg in enumerate(other_msgs) if getattr(msg, "type", None) == "human"]
+    if not human_indices:
+        return system_msgs + other_msgs
+    required_start = human_indices[max(0, len(human_indices) - max(min_turns, 1))]
+    target = max(0, len(other_msgs) - max_messages)
+    starts = [i for i in human_indices if i <= min(target, required_start)]
+    start = starts[-1] if starts else human_indices[0]
+    return system_msgs + other_msgs[start:]
 
 
 class CheckpointerManager:

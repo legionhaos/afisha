@@ -1,3 +1,4 @@
+import math
 from typing import Any
 import structlog
 from langchain_openai import OpenAIEmbeddings
@@ -44,7 +45,11 @@ class EmbeddingService:
             return await client.aembed_query(text.strip())
 
         try:
-            return await llm_circuit_breaker.call(_call_embeddings)
+            vector = await llm_circuit_breaker.call(_call_embeddings)
+            if len(vector) != 1536 or any(not math.isfinite(float(value)) for value in vector):
+                logger.warning("embedding_generation_invalid_vector")
+                return None
+            return [float(value) for value in vector]
         except (CircuitOpenError, TimeoutError) as ce:
             logger.warning("embedding_generation_degraded", reason=str(ce))
             return None

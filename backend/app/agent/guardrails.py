@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from html import escape
 from typing import Any
 
 INJECTION_PATTERNS = [
@@ -9,6 +10,7 @@ INJECTION_PATTERNS = [
     re.compile(r"(?i)\b(?:show|reveal|display|output|print)\s+(?:your\s+)?(?:system\s+prompt|developer\s+mode|initial\s+prompt)\b"),
     re.compile(r"(?i)\b(?:ты\s+теперь|ты\s+больше\s+не|действуй\s+как|act\s+as)\s+(?:DAN|jailbreak|режим\s+разработчика|unrestricted)\b"),
     re.compile(r"(?i)<\s*(?:script|iframe|object|embed|svg|style)"),
+    re.compile(r"(?i)(?:^|\s)(?:system|assistant|developer)\s*:\s"),
 ]
 
 PROMPT_LEAK_PATTERNS = [
@@ -21,13 +23,23 @@ PROMPT_LEAK_PATTERNS = [
 class GuardrailService:
     """Многослойная защита от инъекций промпта и контроль фактической достоверности (152-ФЗ, Defense-in-Depth)."""
 
+    @staticmethod
+    def _normalize(text: str) -> str:
+        return "".join(" " if unicodedata.category(c) == "Cc" else c
+                       for c in unicodedata.normalize("NFKC", text)
+                       if unicodedata.category(c) != "Cf")
+
+    def scan_external_data_for_injection(self, text: str) -> bool:
+        normalized = self._normalize(str(text))
+        return any(pattern.search(normalized) for pattern in INJECTION_PATTERNS)
+
     def check_user_input(self, user_text: str) -> tuple[bool, str | None]:
         """Проверяет входной текст пользователя на наличие попыток Prompt Injection."""
         if not user_text or not user_text.strip():
             return True, None
 
         # Нормализация Unicode (удаление невидимых символов и гомоглифов)
-        normalized = unicodedata.normalize("NFKC", user_text)
+        normalized = self._normalize(user_text)
 
         for pattern in INJECTION_PATTERNS:
             if pattern.search(normalized):
@@ -41,16 +53,20 @@ class GuardrailService:
 
     def sanitize_untrusted_event_data(self, event_dict: dict[str, Any]) -> dict[str, Any]:
         """Оборачивает неконтролируемые данные из БД в изолирующие теги (Spotlighting)."""
-        sanitized = dict(event_dict)
+        def screen(value: Any) -> Any:
+            if isinstance(value, str):
+                return "[Скрыто: обнаружены подозрительные инструкции]" if self.scan_external_data_for_injection(value) else value
+            if isinstance(value, list):
+                return [screen(item) for item in value]
+            if isinstance(value, dict):
+                return {key: screen(item) for key, item in value.items()}
+            return value
 
-        desc = str(sanitized.get("description", ""))
-        # Вырезаем попытки внедрения тегов
-        desc = re.sub(r"(?i)</?untrusted_event_description>", "", desc)
-        sanitized["description"] = f"<untrusted_event_description>{desc}</untrusted_event_description>"
-
-        title = str(sanitized.get("title", ""))
-        sanitized["title"] = re.sub(r"(?i)</?untrusted_event_description>", "", title)
-
+        sanitized = {key: screen(value) for key, value in event_dict.items() if key != "description"}
+        desc = self._normalize(str(event_dict.get("description") or ""))
+        if self.scan_external_data_for_injection(desc):
+            desc = "[Описание скрыто: обнаружены подозрительные инструкции]"
+        sanitized["description"] = f"<untrusted_event_description>{escape(desc)}</untrusted_event_description>"
         return sanitized
 
     def verify_output_grounding(

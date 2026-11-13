@@ -1,6 +1,7 @@
 import re
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -55,12 +56,17 @@ class FallbackSearchService:
         elif "завтра" in clean_text:
             filters.date_from = today_start + timedelta(days=1)
             filters.date_to = today_end + timedelta(days=1)
-        elif any(w in clean_text for w in ["выходн", "суббот", "воскрес"]):
-            days_until_sat = (5 - now_yekt.weekday()) % 7
-            sat_start = today_start + timedelta(days=days_until_sat)
-            sun_end = sat_start + timedelta(days=1, hours=23, minutes=59, seconds=59)
-            filters.date_from = sat_start
-            filters.date_to = sun_end
+        elif "суббот" in clean_text:
+            filters.date_from = today_start + timedelta(days=(5 - now_yekt.weekday()) % 7)
+            filters.date_to = filters.date_from + timedelta(days=1, microseconds=-1)
+        elif "воскрес" in clean_text:
+            filters.date_from = today_start + timedelta(days=(6 - now_yekt.weekday()) % 7)
+            filters.date_to = filters.date_from + timedelta(days=1, microseconds=-1)
+        elif "выходн" in clean_text:
+            days_until_sat = 0 if now_yekt.weekday() == 6 else (5 - now_yekt.weekday()) % 7
+            filters.date_from = today_start + timedelta(days=days_until_sat)
+            days = 1 if now_yekt.weekday() == 6 else 2
+            filters.date_to = filters.date_from + timedelta(days=days, microseconds=-1)
         elif "на этой неделе" in clean_text or "недел" in clean_text:
             filters.date_from = today_start
             filters.date_to = today_end + timedelta(days=7)
@@ -107,13 +113,14 @@ class FallbackSearchService:
         request_id: str,
     ) -> ChatMessageResponseDTO:
         """Выполняет поиск без языковой модели и возвращает гарантированный структурированный ответ."""
+        started = monotonic()
         filters = await self.parse_free_text_deterministically(message)
         result = await self.catalog_service.search_catalog(filters)
 
         recommendations = [
             AgentRecommendationItemDTO(
                 event=item,
-                constraint_match_explanation="Мероприятие подобрано по совпадению города, дат и категории.",
+                constraint_match_explanation="Сведения из каталога; уточните условия у организатора.",
             )
             for item in result.items
         ]
@@ -137,7 +144,7 @@ class FallbackSearchService:
             "plan_steps": ["fallback_deterministic_parse", "catalog_search"],
             "tool_calls": [{"tool": "deterministic_search", "args": filters.model_dump(mode="json")}],
             "grounding_event_ids": [item.id for item in result.items],
-            "latency_ms": 15,
+            "latency_ms": round((monotonic() - started) * 1000),
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "estimated_cost_rub": Decimal("0.0000"),
