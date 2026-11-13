@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import get_agent_orchestrator, get_request_id
+from app.api.deps import get_agent_orchestrator, get_request_id, get_trusted_telegram_user
 from app.agent.orchestrator import CulturalAgentOrchestrator
 from app.schemas.chat import ChatMessageRequestDTO, ChatMessageResponseDTO
 
@@ -21,8 +21,9 @@ async def chat_message_sync(
     request: Request,
     orchestrator: Annotated[CulturalAgentOrchestrator, Depends(get_agent_orchestrator)],
     request_id: Annotated[str, Depends(get_request_id)],
+    telegram_user: Annotated[str | None, Depends(get_trusted_telegram_user)],
 ) -> ChatMessageResponseDTO:
-    return await orchestrator.invoke_chat(req, request_id)
+    return await orchestrator.invoke_chat(req, request_id, telegram_user=telegram_user)
 
 
 @router.post(
@@ -35,8 +36,9 @@ async def chat_message_stream(
     request: Request,
     orchestrator: Annotated[CulturalAgentOrchestrator, Depends(get_agent_orchestrator)],
     request_id: Annotated[str, Depends(get_request_id)],
+    telegram_user: Annotated[str | None, Depends(get_trusted_telegram_user)],
 ) -> StreamingResponse:
-    generator = orchestrator.stream_chat_sse(req, request_id)
+    generator = orchestrator.stream_chat_sse(req, request_id, telegram_user=telegram_user)
     return StreamingResponse(
         generator,
         media_type="text/event-stream",

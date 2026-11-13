@@ -50,6 +50,7 @@ class Settings(BaseSettings):
 
     # Security & Admin
     ADMIN_API_TOKEN: SecretStr = SecretStr("admin_secret_token_123")
+    TELEGRAM_BACKEND_TOKEN: SecretStr = SecretStr("")
     ALLOWED_FRAME_ANCESTORS: str = "*"
 
     # Subscriptions retention

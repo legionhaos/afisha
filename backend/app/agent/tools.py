@@ -2,12 +2,12 @@ import json
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
-from app.models.enums import EventCategory
+from app.models.enums import EventCategory, EventStatus
 from app.repositories.dictionary_repo import DictionaryRepository
 from app.repositories.event_repo import EventRepository
 from app.repositories.feedback_repo import FeedbackRepository
@@ -135,10 +135,12 @@ class AgentToolsFactory:
 
                 results = []
                 for item in response.items:
+                    if item.status != EventStatus.PUBLISHED:
+                        continue
                     card_dict = item.model_dump(mode="json")
                     if self.on_card_fetched:
                         self.on_card_fetched(card_dict)
-                    results.append({
+                    results.append(GuardrailService().sanitize_untrusted_event_data({
                         "id": str(item.id),
                         "title": item.title,
                         "category": item.category.value,
@@ -154,35 +156,37 @@ class AgentToolsFactory:
                         "language": item.language,
                         "org_link": item.org_link,
                         "source_url": item.source_url,
-                        "description": f"<untrusted_event_description>{item.description}</untrusted_event_description>",
-                    })
+                        "description": item.description,
+                    }))
 
                 if not results and response.empty_explanation:
-                    return json.dumps({
-                        "count": 0,
+                    explanation = GuardrailService().sanitize_untrusted_event_data({
                         "message": response.empty_explanation.message,
                         "blocking_constraints": response.empty_explanation.blocking_constraints,
                         "suggested_relaxations": response.empty_explanation.suggested_relaxations,
-                    }, ensure_ascii=False)
+                    })
+                    explanation.pop("description", None)
+                    return json.dumps({"count": 0, **explanation}, ensure_ascii=False)
 
                 return json.dumps({"count": len(results), "events": results}, ensure_ascii=False)
-            except Exception as e:
-                return json.dumps({"error": f"Ошибка выполнения поиска: {str(e)}"}, ensure_ascii=False)
+            except Exception:
+                return json.dumps({"error": "SEARCH_FAILED"})
 
         @tool("get_event", args_schema=GetEventInput)
         async def get_event_tool(event_id: str) -> str:
             """Получение полной информации о мероприятии по UUID (включая проверку статуса отмены)."""
             try:
                 card = await self.catalog_service.get_event_card(UUID(event_id))
+                if card.status not in (EventStatus.PUBLISHED, EventStatus.CANCELLED):
+                    return json.dumps({"error": "EVENT_NOT_FOUND"})
                 card_dict = card.model_dump(mode="json")
                 if self.on_card_fetched:
                     self.on_card_fetched(card_dict)
 
-                res = card.model_dump(mode="json")
-                res["description"] = f"<untrusted_event_description>{card.description}</untrusted_event_description>"
+                res = GuardrailService().sanitize_untrusted_event_data(card.model_dump(mode="json"))
                 return json.dumps(res, ensure_ascii=False)
-            except Exception as e:
-                return json.dumps({"error": f"Событие {event_id} не найдено: {str(e)}"}, ensure_ascii=False)
+            except Exception:
+                return json.dumps({"error": "EVENT_LOOKUP_FAILED"})
 
         @tool("find_similar", args_schema=FindSimilarInput)
         async def find_similar_tool(
@@ -194,8 +198,8 @@ class AgentToolsFactory:
             """Поиск похожих мероприятий (той же категории или семантически близких)."""
             try:
                 base_event = await self.event_repo.get_by_id(UUID(event_id))
-                if not base_event:
-                    return json.dumps({"error": f"Базовое мероприятие {event_id} не найдено"}, ensure_ascii=False)
+                if not base_event or base_event.status not in (EventStatus.PUBLISHED, EventStatus.CANCELLED):
+                    return json.dumps({"error": "EVENT_NOT_FOUND"})
 
                 df = self.norm.parse_date_to_yekaterinburg(date_from) if date_from else None
                 dt = self.norm.parse_date_to_yekaterinburg(date_to) if date_to else None
@@ -203,11 +207,13 @@ class AgentToolsFactory:
                 items = await self.event_repo.find_similar_events(base_event, city=city, date_from=df, date_to=dt, limit=4)
                 results = []
                 for item in items:
+                    if item.status != EventStatus.PUBLISHED:
+                        continue
                     card = self.catalog_service._to_card_dto(item)
                     card_dict = card.model_dump(mode="json")
                     if self.on_card_fetched:
                         self.on_card_fetched(card_dict)
-                    results.append({
+                    results.append(GuardrailService().sanitize_untrusted_event_data({
                         "id": str(item.id),
                         "title": item.title,
                         "category": item.category.value,
@@ -218,11 +224,11 @@ class AgentToolsFactory:
                         "price_max": item.price_max,
                         "is_free": item.is_free,
                         "source_url": item.source_url,
-                    })
+                    }))
 
                 return json.dumps({"count": len(results), "similar_events": results}, ensure_ascii=False)
-            except Exception as e:
-                return json.dumps({"error": f"Ошибка поиска похожих: {str(e)}"}, ensure_ascii=False)
+            except Exception:
+                return json.dumps({"error": "SIMILAR_SEARCH_FAILED"})
 
         @tool("get_venue_schedule", args_schema=GetVenueScheduleInput)
         async def get_venue_schedule_tool(venue: str, date_from: str, date_to: str) -> str:
@@ -234,84 +240,35 @@ class AgentToolsFactory:
 
                 results = []
                 for item in items:
+                    if item.status != EventStatus.PUBLISHED:
+                        continue
                     card = self.catalog_service._to_card_dto(item)
                     card_dict = card.model_dump(mode="json")
                     if self.on_card_fetched:
                         self.on_card_fetched(card_dict)
-                    results.append({
+                    results.append(GuardrailService().sanitize_untrusted_event_data({
                         "id": str(item.id),
                         "title": item.title,
                         "date_start": item.date_start.isoformat(),
                         "duration_min": item.duration_min,
                         "venue": item.venue,
                         "price_min": item.price_min,
-                    })
+                    }))
 
-                return json.dumps({"venue": venue, "events_count": len(results), "schedule": results}, ensure_ascii=False)
-            except Exception as e:
-                return json.dumps({"error": f"Ошибка получения расписания: {str(e)}"}, ensure_ascii=False)
+                safe_venue = GuardrailService().sanitize_untrusted_event_data({"venue": venue})["venue"]
+                return json.dumps({"venue": safe_venue, "events_count": len(results), "schedule": results}, ensure_ascii=False)
+            except Exception:
+                return json.dumps({"error": "SCHEDULE_FAILED"})
 
         @tool("subscribe", args_schema=SubscribeInput)
         async def subscribe_tool(city: str, category: str | None = None, period_type: str = "all") -> str:
             """Оформление или перенос подписки. Требует обязательного подтверждения пользователя!"""
-            try:
-                cat_enum = None
-                if category:
-                    try:
-                        cat_enum = EventCategory(category.lower())
-                    except ValueError:
-                        pass
-
-                # Проверка двухфазного подтверждения
-                action_id = f"sub_{uuid4().hex[:8]}"
-                if not self.confirmed_action_id:
-                    cat_name = cat_enum.value if cat_enum else "все категории"
-                    return json.dumps({
-                        "status": "CONFIRMATION_REQUIRED",
-                        "pending_action_id": action_id,
-                        "summary": f"Оформить подписку на культурные события в г. {city} ({cat_name})?",
-                    }, ensure_ascii=False)
-
-                sub = await self.sub_repo.upsert_subscription(
-                    user_identifier=self.user_identifier,
-                    telegram_chat_id=None,
-                    city=city,
-                    category=cat_enum,
-                    period_type=period_type,
-                )
-                return json.dumps({
-                    "status": "SUCCESS",
-                    "subscription_id": str(sub.id),
-                    "message": f"Подписка на г. {city} успешно активирована!",
-                }, ensure_ascii=False)
-            except Exception as e:
-                return json.dumps({"error": f"Ошибка оформления подписки: {str(e)}"}, ensure_ascii=False)
+            return json.dumps({"status": "UNAVAILABLE", "error": "SECURE_CONFIRMATION_STORE_REQUIRED"})
 
         @tool("save_feedback", args_schema=SaveFeedbackInput)
         async def save_feedback_tool(message_text: str, event_id: str | None = None) -> str:
             """Отправка обращения или уточнения организаторам. Требует подтверждения пользователя!"""
-            try:
-                action_id = f"fdbk_{uuid4().hex[:8]}"
-                if not self.confirmed_action_id:
-                    return json.dumps({
-                        "status": "CONFIRMATION_REQUIRED",
-                        "pending_action_id": action_id,
-                        "summary": f"Отправить сообщение организаторам: '{message_text[:100]}...'?",
-                    }, ensure_ascii=False)
-
-                eid = UUID(event_id) if event_id else None
-                ticket = await self.feedback_repo.create_feedback(
-                    sender_identifier=self.user_identifier,
-                    message_text=message_text,
-                    event_id=eid,
-                )
-                return json.dumps({
-                    "status": "SUCCESS",
-                    "ticket_id": str(ticket.id),
-                    "message": "Обращение успешно зарегистрировано и передано модераторам.",
-                }, ensure_ascii=False)
-            except Exception as e:
-                return json.dumps({"error": f"Ошибка отправки обращения: {str(e)}"}, ensure_ascii=False)
+            return json.dumps({"status": "UNAVAILABLE", "error": "SECURE_CONFIRMATION_STORE_REQUIRED"})
 
         return [
             search_events_tool,

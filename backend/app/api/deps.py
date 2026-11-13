@@ -1,3 +1,4 @@
+import hmac
 from collections.abc import AsyncGenerator
 from typing import Annotated
 from uuid import uuid4
@@ -35,6 +36,26 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+
+
+def get_trusted_telegram_user(
+    x_bot_token: Annotated[str | None, Header(alias="X-Bot-Token")] = None,
+    x_telegram_user_id: Annotated[str | None, Header(alias="X-Telegram-User-Id")] = None,
+    settings: Settings = Depends(get_settings),
+) -> str | None:
+    """Accept a Telegram identity only from the configured trusted bot backend."""
+    expected = settings.TELEGRAM_BACKEND_TOKEN.get_secret_value()
+    if not expected or not x_bot_token or not hmac.compare_digest(
+        x_bot_token.encode(), expected.encode()
+    ):
+        return None
+    if (not x_telegram_user_id or len(x_telegram_user_id) > 19
+            or not x_telegram_user_id.isascii() or not x_telegram_user_id.isdecimal()):
+        return None
+    telegram_id = int(x_telegram_user_id)
+    if not 0 < telegram_id <= 2**63 - 1:
+        return None
+    return str(telegram_id)
 
 
 def get_request_id(request: Request) -> str:
