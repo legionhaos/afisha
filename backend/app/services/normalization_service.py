@@ -97,7 +97,7 @@ class NormalizationService:
     def parse_date_to_yekaterinburg(self, raw_date: str | datetime | None) -> datetime:
         """Приводит любую дату к часовому поясу Asia/Yekaterinburg (UTC+5)."""
         if raw_date is None:
-            return datetime.now(YEKT_TZ)
+            raise ValueError("Дата не указана")
 
         if isinstance(raw_date, datetime):
             if raw_date.tzinfo is None:
@@ -130,8 +130,8 @@ class NormalizationService:
             if dt.tzinfo is None:
                 return dt.replace(tzinfo=YEKT_TZ)
             return dt.astimezone(YEKT_TZ)
-        except Exception:
-            return datetime.now(YEKT_TZ)
+        except ValueError:
+            raise ValueError(f"Не удалось разобрать дату: {str_date}") from None
 
     def normalize_age_limit(self, raw_age: str | int | None, context_text: str = "") -> int:
         """Округляет возраст к стандартной шкале {0, 6, 12, 16, 18} по требованиям ТЗ."""

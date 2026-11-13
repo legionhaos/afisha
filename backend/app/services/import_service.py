@@ -244,6 +244,10 @@ class ImportService:
             normalized_title=normalized_title,
         )
 
+        date_end = self.norm_service.parse_date_to_yekaterinburg(raw_row.get("date_end")) if raw_row.get("date_end") else None
+        if date_end is not None and date_end < date_start:
+            raise ValueError("Дата окончания раньше даты начала")
+
         # 5. Оценка уверенности и отправка на модерацию при необходимости
         event_dict_payload: dict[str, Any] = {
             "title": title,
@@ -251,7 +255,7 @@ class ImportService:
             "category": category,
             "tags": tags,
             "date_start": date_start,
-            "date_end": self.norm_service.parse_date_to_yekaterinburg(raw_row.get("date_end")) if raw_row.get("date_end") else None,
+            "date_end": date_end,
             "duration_min": int(raw_row.get("duration_min")) if raw_row.get("duration_min") else None,
             "city": resolved_city,
             "venue": venue,

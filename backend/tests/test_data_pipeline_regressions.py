@@ -56,6 +56,25 @@ async def test_zero_price_remains_free(price):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_date", ["неизвестно", "2027-02-30", "2027-13-01"])
+async def test_invalid_dates_are_not_replaced_with_now(bad_date):
+    svc = service()
+    report = await svc.import_file(__import__("json").dumps([payload(date_start=bad_date)], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_end_before_start_is_rejected():
+    svc = service()
+    event = payload(date_end="2026-12-31T19:00:00+05:00")
+    report = await svc.import_file(__import__("json").dumps([event], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    assert "Дата окончания" in report.errors[0].reason
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_replay_reuses_source_and_preserves_cancellation():
     svc = service()
     raw = SimpleNamespace(id=uuid4(), source_hash="a" * 64, processed_event_id=uuid4(), raw_payload=payload())
