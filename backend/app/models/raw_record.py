@@ -22,7 +22,7 @@ class RawEventRecord(Base):
         default=uuid4,
     )
     source_type: Mapped[SourceType] = mapped_column(
-        Enum(SourceType, name="source_type_enum"),
+        Enum(SourceType, name="source_type_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
     source_url: Mapped[str] = mapped_column(

@@ -42,7 +42,7 @@ class Event(Base, TimestampMixin):
         index=True,
     )
     category: Mapped[EventCategory] = mapped_column(
-        Enum(EventCategory, name="event_category_enum"),
+        Enum(EventCategory, name="event_category_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         index=True,
     )
@@ -126,7 +126,7 @@ class Event(Base, TimestampMixin):
         nullable=False,
     )
     source_type: Mapped[SourceType] = mapped_column(
-        Enum(SourceType, name="source_type_enum"),
+        Enum(SourceType, name="source_type_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
     source_hash: Mapped[str] = mapped_column(
@@ -144,7 +144,7 @@ class Event(Base, TimestampMixin):
         default=Decimal("1.00"),
     )
     status: Mapped[EventStatus] = mapped_column(
-        Enum(EventStatus, name="event_status_enum"),
+        Enum(EventStatus, name="event_status_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=EventStatus.PUBLISHED,
         index=True,
@@ -156,7 +156,7 @@ class Event(Base, TimestampMixin):
         index=True,
     )
     dispute_reason: Mapped[ModerationReason | None] = mapped_column(
-        Enum(ModerationReason, name="moderation_reason_enum"),
+        Enum(ModerationReason, name="moderation_reason_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=True,
     )
     dedup_key: Mapped[str] = mapped_column(
@@ -216,7 +216,7 @@ class EventSource(Base):
         nullable=False,
     )
     source_type: Mapped[SourceType] = mapped_column(
-        Enum(SourceType, name="source_type_enum"),
+        Enum(SourceType, name="source_type_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
     source_hash: Mapped[str] = mapped_column(

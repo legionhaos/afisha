@@ -37,7 +37,7 @@ class Subscription(Base):
         index=True,
     )
     category: Mapped[EventCategory | None] = mapped_column(
-        Enum(EventCategory, name="event_category_enum"),
+        Enum(EventCategory, name="event_category_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=True,
         index=True,
     )
@@ -86,7 +86,7 @@ class FeedbackRequest(Base):
         nullable=False,
     )
     status: Mapped[FeedbackStatus] = mapped_column(
-        Enum(FeedbackStatus, name="feedback_status_enum"),
+        Enum(FeedbackStatus, name="feedback_status_enum", values_callable=lambda x: [e.value for e in x]),
         default=FeedbackStatus.NEW,
         nullable=False,
         index=True,

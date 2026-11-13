@@ -5,7 +5,6 @@
 Или: make seed
 """
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -13,8 +12,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.core.config import settings
-from app.core.database import db_manager
 from app.repositories.audit_trace_repo import AuditTraceRepository
 from app.repositories.dictionary_repo import DictionaryRepository
 from app.repositories.event_repo import EventRepository
@@ -31,19 +31,23 @@ async def seed():
         print(f"❌ Файл сидов не найден: {seed_file}")
         sys.exit(1)
 
-    print("🚀 Инициализация подключения к PostgreSQL...")
-    try:
-        await db_manager.init_pools()
-    except Exception as e:
-        print(f"❌ Не удалось подключиться к БД: {e}")
-        print("💡 Убедитесь, что база данных запущена (например, через 'make up' или docker compose)")
-        sys.exit(1)
+    print("🚀 Подключение к PostgreSQL через SQLAlchemy AsyncEngine...")
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        pool_pre_ping=True,
+        echo=False,
+    )
+    session_maker = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     print(f"📦 Чтение данных из {seed_file.name}...")
     with open(seed_file, "rb") as f:
         file_bytes = f.read()
 
-    async with db_manager.get_session() as session:
+    async with session_maker() as session:
         # Репозитории
         event_repo = EventRepository(session)
         raw_repo = RawRecordRepository(session)
@@ -54,7 +58,7 @@ async def seed():
         print("🏙️ Заполнение справочника городов Республики Башкортостан...")
         bash_cities = ["Уфа", "Стерлитамак", "Салават", "Нефтекамск", "Октябрьский", "Сибай", "Белорецк", "Ишимбай"]
         for cname in bash_cities:
-            await dict_repo.get_or_create_city(cname)
+            await dict_repo.upsert_city(name=cname, normalized_name=cname.lower())
 
         await session.commit()
 
@@ -88,7 +92,7 @@ async def seed():
         print("=" * 60)
         print(f" Всего прочитано записей:  {report.total_received}")
         print(f" ✅ Успешно добавлено:     {report.added_count}")
-        print(f" 🔄 Сведено дубликатов:    {report.deduplicated_count}")
+        print(f" 🔄 Сведено дубликатов:    {report.deduplicated_merged_count}")
         print(f" ⚠️ Отклонено (ошибки):   {report.rejected_count}")
 
         if report.errors:
@@ -99,7 +103,7 @@ async def seed():
         print("=" * 60)
         print("🎉 База данных успешно наполнена реальными событиями!")
 
-    await db_manager.close_pools()
+    await engine.dispose()
 
 
 if __name__ == "__main__":
