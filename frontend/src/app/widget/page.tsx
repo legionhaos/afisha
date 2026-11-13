@@ -31,7 +31,6 @@ export default function WidgetPage() {
 
   return <main className="widget-shell">
     <header className="widget-header"><div><span className="widget-kicker">Афиша</span><h1>События рядом</h1></div><a href="/" target="_blank" rel="noreferrer">Вся афиша ↗</a></header>
-    {process.env.NEXT_PUBLIC_DATA_MODE !== 'api' && <p className="widget-demo">Демонстрационные данные</p>}
     {status === 'loading' ? <p className="widget-status" role="status">Загружаем события…</p> : status === 'error' ? <div className="widget-status" role="alert"><p>Не удалось загрузить события.</p><button onClick={() => setAttempt(n => n + 1)}>Попробовать снова</button></div> : items.length ? <><p className="widget-count">Найдено: {total}</p><div className="widget-grid">{items.map(event => <EventCard key={event.id} event={event} />)}</div></> : <p className="widget-status">Событий по выбранным условиям не найдено.</p>}
   </main>;
 }
