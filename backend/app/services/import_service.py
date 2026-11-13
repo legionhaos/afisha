@@ -3,6 +3,7 @@ import hashlib
 import inspect
 import io
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -88,7 +89,9 @@ class ImportService:
             if suspicious:
                 reason = ModerationReason.PROMPT_INJECTION_SUSPECTED
             raw_status = str(payload.get("status") or "").strip().casefold().replace("ё", "е")
-            cancelled = raw_status in {"cancelled", "canceled", "отменено", "отменен", "отменена"}
+            title = str(payload.get("title") or "").casefold().replace("ё", "е")
+            cancelled_marker = re.search(r"[\(\[]\s*(?:отменено|отменен|отменена)\s*[\)\]]", title)
+            cancelled = raw_status in {"cancelled", "canceled", "отменено", "отменен", "отменена"} or bool(cancelled_marker)
             data.update(source_type=raw.source_type, source_hash=raw.source_hash, source_url=raw.source_url,
                         confidence=confidence, verified_at=datetime.now(timezone.utc),
                         is_disputed=reason is not None, dispute_reason=reason.value if reason else None,
