@@ -33,8 +33,10 @@ class NormalizationService:
             raise ValueError("Дробная цена не поддерживается")
         if not 1 <= len(numbers) <= 2:
             raise ValueError("Не удалось разобрать цену")
-        if len(numbers) == 1 and re.search(r"\b(?:от|до)\s*\d", text):
-            raise ValueError("Цена содержит только одну границу диапазона")
+        if len(numbers) == 1 and re.search(r"\bдо\s*\d", text):
+            raise ValueError("Цена содержит только верхнюю границу; минимальная цена неизвестна")
+        if len(numbers) == 1 and re.search(r"\bот\s*\d", text):
+            raise ValueError("Цена содержит только нижнюю границу; максимальная цена неизвестна")
         values = [int(re.sub(r"\s", "", value)) for value in numbers]
         if len(values) == 2 and values[0] > values[1]:
             raise ValueError("Минимальная цена больше максимальной")
@@ -125,6 +127,8 @@ class NormalizationService:
             str(data["date_start"]), str(data["date_end"]) if data.get("date_end") else None
         )
         price = data.get("price")
+        if price is None or price == "":
+            price = data.get("price_text")
         if price is None or price == "":
             price = data.get("price_min")
             if price is not None and data.get("price_max") not in (None, ""):
