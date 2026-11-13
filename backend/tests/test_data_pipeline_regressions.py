@@ -1,11 +1,11 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from app.models.enums import EventStatus, SourceType
+from app.models.enums import EventCategory, EventStatus
 from app.repositories.event_repo import EventRepository
 from app.schemas.event import EventSearchFilterDTO
 from app.schemas.import_mod import ImportReportDTO
@@ -124,6 +124,19 @@ def test_age_is_not_inferred_from_arbitrary_description_numbers():
         norm.normalize_age_limit("неизвестно")
     with pytest.raises(ValueError):
         norm.normalize_age_limit(-1)
+
+
+@pytest.mark.asyncio
+async def test_similar_events_require_category_or_close_vector():
+    repo = EventRepository(AsyncMock())
+    repo.session.execute.return_value = MagicMock()
+    repo.session.execute.return_value.scalars.return_value.all.return_value = []
+    base = SimpleNamespace(id=uuid4(), city="Уфа", category=EventCategory.CONCERT, embedding=[1.0] + [0.0] * 1535)
+    await repo.find_similar_events(base)
+    statement = repo.session.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "events.category =" in sql and "<=>" in sql and " <= " in sql
+    assert "NULLS LAST" in sql
 
 
 def test_hard_duration_filter_excludes_unknown_duration():

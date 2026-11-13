@@ -207,9 +207,9 @@ class EventRepository:
         stmt = select(Event).options(selectinload(Event.sources)).where(and_(*clauses))
 
         if base_event.embedding is not None:
-            stmt = stmt.order_by(
-                Event.embedding.cosine_distance(base_event.embedding).asc(),
-                Event.date_start.asc(),
+            distance = Event.embedding.cosine_distance(base_event.embedding)
+            stmt = stmt.where(or_(Event.category == base_event.category, distance <= 0.3)).order_by(
+                distance.nulls_last(), Event.date_start.asc(), Event.id,
             )
         else:
             # Fallback to category and date
