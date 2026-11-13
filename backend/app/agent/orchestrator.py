@@ -188,6 +188,10 @@ class CulturalAgentOrchestrator:
             tool_messages: list[ToolMessage] = []
             tool_traces: list[dict[str, Any]] = []
             grounding_ids: list[str] = []
+            limit = max(0, min(5, self.settings.MAX_AGENT_STEPS))
+            executed = state.get("tool_call_count", 0)
+            requires_confirmation = state.get("requires_confirmation", False)
+            pending_action = state.get("pending_action")
 
             for call in last_msg.tool_calls:
                 tool_name = call["name"]
@@ -196,31 +200,42 @@ class CulturalAgentOrchestrator:
 
                 tool_obj = tools_by_name.get(tool_name)
                 if not tool_obj:
-                    res_str = json.dumps({"error": f"Инструмент {tool_name} не найден"})
+                    res_str = json.dumps({"error": "UNKNOWN_TOOL"})
+                elif executed >= limit or requires_confirmation:
+                    res_str = json.dumps({"error": "TOOL_LIMIT_OR_CONFIRMATION_REQUIRED"})
                 else:
+                    executed += 1
                     try:
                         res_str = await tool_obj.ainvoke(tool_args)
-                    except Exception as err:
-                        res_str = json.dumps({"error": f"Ошибка инструмента {tool_name}: {str(err)}"})
+                    except Exception:
+                        logger.warning("agent_tool_failed", tool=tool_name)
+                        res_str = json.dumps({"error": "TOOL_FAILED"})
 
                 tool_messages.append(ToolMessage(tool_call_id=tool_id, content=res_str))
-                tool_traces.append({"tool": tool_name, "args": tool_args, "response_sample": res_str[:200]})
+                if tool_name in {"subscribe", "save_feedback"}:
+                    unavailable = "SECURE_CONFIRMATION_STORE_REQUIRED" in res_str
+                    tool_traces.append({"tool": tool_name, "args": {}, "response_sample": (
+                        "SECURE_CONFIRMATION_STORE_REQUIRED" if unavailable else "[redacted]"
+                    )})
+                else:
+                    tool_traces.append({"tool": tool_name, "args": tool_args, "response_sample": res_str[:200]})
 
                 # Проверка confirmation_required
                 try:
                     parsed = json.loads(res_str)
                     if isinstance(parsed, dict) and parsed.get("status") == "CONFIRMATION_REQUIRED":
-                        state["requires_confirmation"] = True
-                        state["pending_action"] = {
+                        requires_confirmation = True
+                        pending_action = {
                             "action_id": parsed.get("pending_action_id"),
                             "summary": parsed.get("summary"),
                         }
-                    elif isinstance(parsed, dict) and "events" in parsed:
-                        for ev in parsed["events"]:
-                            if "id" in ev:
-                                grounding_ids.append(ev["id"])
-                    elif isinstance(parsed, dict) and "id" in parsed:
-                        grounding_ids.append(parsed["id"])
+                    elif isinstance(parsed, dict):
+                        key_by_tool = {"search_events": "events", "find_similar": "similar_events", "get_venue_schedule": "schedule"}
+                        key = key_by_tool.get(tool_name)
+                        if key and isinstance(parsed.get(key), list):
+                            grounding_ids.extend(str(ev["id"]) for ev in parsed[key] if isinstance(ev, dict) and "id" in ev)
+                        elif tool_name == "get_event" and "id" in parsed:
+                            grounding_ids.append(str(parsed["id"]))
                 except Exception:
                     pass
 
@@ -229,6 +244,9 @@ class CulturalAgentOrchestrator:
                 "tool_executions": tool_traces,
                 "grounding_event_ids": grounding_ids,
                 "verified_cards_map": verified_cards_collector,
+                "tool_call_count": executed,
+                "requires_confirmation": requires_confirmation,
+                "pending_action": pending_action,
                 "plan_steps": [f"executed_tools_{len(tool_messages)}"],
             }
 
@@ -240,21 +258,27 @@ class CulturalAgentOrchestrator:
                     "recommendations": [],
                 }
 
-            last_ai = None
-            for m in reversed(state["messages"]):
-                if isinstance(m, AIMessage):
-                    last_ai = m
-                    break
-
-            raw_reply = str(last_ai.content) if last_ai else "Не удалось сформировать ответ."
-
-            # Пост-валидация обоснованности фактов
-            clean_reply, raw_cards = self.guardrails.verify_output_grounding(
-                reply_text=raw_reply,
+            # Only structured, verified cards may contribute facts to the response.
+            _, raw_cards = self.guardrails.verify_output_grounding(
+                reply_text="",
                 grounding_event_ids=state.get("grounding_event_ids", []),
                 verified_cards_map=state.get("verified_cards_map", {}),
             )
 
+            # Model prose is not a verified source of event facts. Cards carry
+            # catalog data; keep the surrounding text deterministic.
+            action_unavailable = any(
+                entry.get("tool") in {"subscribe", "save_feedback"}
+                and "SECURE_CONFIRMATION_STORE_REQUIRED" in entry.get("response_sample", "")
+                for entry in state.get("tool_executions", [])
+            )
+            if state.get("requires_confirmation"):
+                clean_reply = "Проверьте описание действия и подтвердите его."
+            elif action_unavailable:
+                clean_reply = "Оформление подписки или отправка обращения через помощника временно недоступны."
+            else:
+                clean_reply = ("Вот мероприятия из каталога. Уточните условия у организатора."
+                               if raw_cards else "Не удалось подобрать мероприятия. Уточните запрос или повторите поиск.")
             return {
                 "final_response_text": clean_reply,
                 "recommendations": raw_cards,
@@ -326,7 +350,11 @@ class CulturalAgentOrchestrator:
             "finalize_output": "finalize_output",
             "fallback": "fallback",
         })
-        workflow.add_edge("act_tools", "reason")
+        workflow.add_conditional_edges(
+            "act_tools",
+            lambda state: "finalize_output" if state.get("requires_confirmation") else "reason",
+            {"finalize_output": "finalize_output", "reason": "reason"},
+        )
         workflow.add_edge("finalize_output", END)
         workflow.add_edge("fallback", END)
 
@@ -336,10 +364,19 @@ class CulturalAgentOrchestrator:
         self,
         req: ChatMessageRequestDTO,
         request_id: str,
+        telegram_user: str | None = None,
     ) -> ChatMessageResponseDTO:
         """Синхронный запуск агентного контура для Telegram-бота и HTTP клиентов."""
         start_time = time.monotonic()
         trace_id = uuid4()
+
+        if req.confirm_action_id:
+            # Never send a confirmation token to the model or fallback search.
+            return ChatMessageResponseDTO(
+                thread_id=req.thread_id,
+                trace_id=trace_id,
+                reply_text="Подтверждение действия недоступно или срок его действия истёк.",
+            )
 
         # Check if offline/mock environment: if so, directly execute deterministic fallback to guarantee 0-hallucination test passage
         api_key_val = self.settings.LLM_API_KEY.get_secret_value()
@@ -362,6 +399,7 @@ class CulturalAgentOrchestrator:
             "user_identifier": req.user_identifier,
             "request_id": request_id,
             "step_count": 0,
+            "tool_call_count": 0,
             "plan_steps": [],
             "tool_executions": [],
             "grounding_event_ids": [],
@@ -397,7 +435,10 @@ class CulturalAgentOrchestrator:
             "id": trace_id,
             "request_id": request_id,
             "thread_id": req.thread_id,
-            "user_query": req.message,
+            "user_query": "[redacted]" if any(
+                entry.get("tool") in {"subscribe", "save_feedback"}
+                for entry in final_state.get("tool_executions", [])
+            ) else req.message,
             "plan_steps": final_state.get("plan_steps", []),
             "tool_calls": final_state.get("tool_executions", []),
             "grounding_event_ids": grounding_uuids,
@@ -441,6 +482,7 @@ class CulturalAgentOrchestrator:
         self,
         req: ChatMessageRequestDTO,
         request_id: str,
+        telegram_user: str | None = None,
     ) -> AsyncIterator[bytes]:
         """Генератор Server-Sent Events (SSE) с периодической отправкой : heartbeat."""
         yield f"event: status\ndata: {json.dumps({'message': 'Обработка запроса...'}, ensure_ascii=False)}\n\n".encode("utf-8")
@@ -460,7 +502,7 @@ class CulturalAgentOrchestrator:
 
         try:
             # Выполняем рассуждение
-            response_dto = await self.invoke_chat(req, request_id)
+            response_dto = await self.invoke_chat(req, request_id, telegram_user=telegram_user)
 
             # Отправка токенов / частей
             yield f"event: token\ndata: {json.dumps({'text': response_dto.reply_text}, ensure_ascii=False)}\n\n".encode("utf-8")

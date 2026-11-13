@@ -32,7 +32,7 @@ class FallbackSearchService:
 
     async def parse_free_text_deterministically(self, text: str) -> EventSearchFilterDTO:
         """Детерминированно извлекает фильтры из русскоязычного свободного текста без LLM."""
-        clean_text = text.lower().strip()
+        clean_text = text.lower().replace("ё", "е").strip()
         filters = EventSearchFilterDTO()
 
         now_yekt = datetime.now(YEKT_TZ)
@@ -67,24 +67,30 @@ class FallbackSearchService:
             filters.date_from = today_start + timedelta(days=days_until_sat)
             days = 1 if now_yekt.weekday() == 6 else 2
             filters.date_to = filters.date_from + timedelta(days=days, microseconds=-1)
-        elif "на этой неделе" in clean_text or "недел" in clean_text:
+        elif "на этой неделе" in clean_text:
             filters.date_from = today_start
-            filters.date_to = today_end + timedelta(days=7)
+            filters.date_to = today_end + timedelta(days=6 - now_yekt.weekday())
 
         # 3. Поиск цены
-        if re.search(r"(?i)(?:^|\s)(бесплатн\w*|вход\s+свободн\w*|свободный\s+вход|даром|(?<!\d)0\s*(?:руб|р|₽)?)(?:$|\s|[.,;!?])", f" {clean_text} "):
+        if re.search(r"(?<!не )\b(?:бесплатн\w*|вход\s+свободн\w*|свободный\s+вход|даром)\b", clean_text):
             filters.is_free = True
         else:
-            price_match = re.search(r"(?:до|дешевле|менее|не дороже)\s*(\d+)", clean_text)
+            price_match = re.search(
+                r"(?:до|дешевле|менее|не дороже)\s*(\d{1,3}(?:[  ]\d{3})+|\d+)\s*(?:руб(?:лей|ля|ль)?\.?|р\.?(?!\w)|₽)",
+                clean_text,
+            )
             if price_match:
-                filters.price_max = int(price_match.group(1))
+                amount = int(re.sub(r"\s", "", price_match.group(1)))
+                filters.price_max = amount // 2 if re.search(r"\bна\s+двоих\b", clean_text) else amount
 
         # 4. Поиск возраста
-        age_match = re.search(r"(\d+)\s*(?:лет|года|год)", clean_text)
+        age_match = re.search(
+            r"\b(?:ребенк\w*|дет\w*|сын\w*|доч\w*)\s+(\d{1,2})\s*(?:лет|года|год)\b"
+            r"|\b(\d{1,2})\s*(?:лет|года|год)\s+(?:ребенк\w*|сын\w*|доч\w*)\b",
+            clean_text,
+        )
         if age_match:
-            filters.age_limit_max = int(age_match.group(1))
-        elif any(w in clean_text for w in ["с ребенком", "для детей", "детск"]):
-            filters.age_limit_max = 12
+            filters.age_limit_max = min(int(age_match.group(1) or age_match.group(2)), 18)
 
         # 5. Поиск категории
         if any(w in clean_text for w in ["концерт", "музык", "песн", "оркестр", "симфон"]):
@@ -130,7 +136,8 @@ class FallbackSearchService:
             "⚠️ Интеллектуальный агент временно работает в резервном режиме поиска по фильтрам. "
         )
         if recommendations:
-            reply_intro += f"По вашему запросу найдено {len(recommendations)} подходящих мероприятий в базе:"
+            reply_intro += (f"Найдено {len(recommendations)} мероприятий по распознанным параметрам. "
+                            "Проверьте остальные условия и стоимость у организатора.")
         else:
             reason = result.empty_explanation.message if result.empty_explanation else "Ничего не найдено."
             reply_intro += f"{reason} Попробуйте изменить параметры поиска."

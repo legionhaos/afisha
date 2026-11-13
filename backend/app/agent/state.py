@@ -15,6 +15,7 @@ class AgentGraphState(TypedDict):
 
     # Счетчик шагов ReAct (жесткий лимит 5 шагов по ТЗ)
     step_count: int
+    tool_call_count: int
 
     # Накопители трассировки выполнения
     plan_steps: Annotated[list[str], operator.add]

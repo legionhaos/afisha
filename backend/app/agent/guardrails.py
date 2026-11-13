@@ -85,9 +85,11 @@ class GuardrailService:
         # 2. Фильтрация карточек-оснований
         # Оставляем только те карточки, которые реально были получены из инструментов в этом диалоге
         valid_recommendations: list[dict[str, Any]] = []
+        seen: set[str] = set()
         for eid in grounding_event_ids:
-            if eid in verified_cards_map:
+            if eid in verified_cards_map and eid not in seen:
                 valid_recommendations.append(verified_cards_map[eid])
+                seen.add(eid)
 
         # Ограничение до 5 лучших карточек
         valid_recommendations = valid_recommendations[:5]
