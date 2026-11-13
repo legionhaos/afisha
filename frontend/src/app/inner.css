@@ -1,0 +1,35 @@
+.inner-page{max-width:1280px;margin:auto;min-height:70vh;padding:48px 5% 100px}.inner-back{display:inline-block;color:#4b6e56;font-size:13px;margin-bottom:30px}.inner-page h1{font-family:Georgia,serif;font-size:clamp(42px,6vw,70px);font-weight:400;letter-spacing:-.05em;margin:12px 0}.inner-page h1 span{color:#a64c3a}.inner-lead{font-size:15px;line-height:1.6;color:#637469;max-width:620px}.inner-page .service-empty{margin-top:20px}.inner-page .home-event-grid{margin-top:20px}.inner-results{display:flex;justify-content:space-between;align-items:end;gap:15px;margin-top:36px}.inner-results h2{font-family:Georgia,serif;font-size:30px;font-weight:400;margin:0}.inner-results>span{font-size:12px;color:#687a6d}.inner-page .home-categories a{flex:none;padding:10px 14px;border:1px solid #dce2d8;background:transparent;color:#526356;font-size:12px}.inner-page .home-categories a[aria-current=page]{background:#254f3b;border-color:#254f3b;color:white}.home-bottom{padding-top:55px;align-items:start}.home-bottom>section{padding:35px;background:#f0f2e9}.home-bottom>section h2{font:400 32px Georgia,serif}.home-bottom>section>p:not(.home-kicker){color:#65766a;font-size:14px}.home-bottom>section .catalog-button{margin-top:16px}.home-bottom .home-assistant{margin-top:0}@media(max-width:600px){.inner-page{padding:30px 20px 90px}.inner-results h2{font-size:25px}.home-bottom{padding-top:35px}.home-bottom>section{padding:25px}}
+.events-directions{padding-top:30px}.direction-copy h2{font-family:Georgia,serif;font-size:26px;font-weight:400;letter-spacing:-.03em;margin:10px 0}.category-results{margin-top:30px}.category-demo{font-size:12px;color:#6d6b58;margin-bottom:20px}.category-empty{padding:35px;background:#edf1e8;color:#425e49}.category-empty h2{font:400 27px Georgia,serif;margin:0 0 12px}.category-empty p{font-size:14px;line-height:1.5}.category-empty a{display:inline-block;margin-top:12px;font-size:13px;font-weight:bold;color:#315f45}@media(max-width:700px){.direction-copy h2{font-size:22px}}
+/* Asymmetric editorial mosaic, scoped to the directions page. */
+@media (min-width: 901px){
+  .events-directions .direction-grid{grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-flow:row;align-items:stretch;gap:18px}
+  .events-directions .direction-card{grid-row:auto;min-height:210px}
+  .events-directions .direction-card:nth-child(1){grid-column:span 7;grid-row:span 2;display:flex;flex-direction:column}
+  .events-directions .direction-card:nth-child(1) .direction-art{min-height:260px;flex:1}
+  .events-directions .direction-card:nth-child(2){grid-column:span 5;min-height:190px;grid-template-columns:42% 58%}
+  .events-directions .direction-card:nth-child(3){grid-column:span 5;min-height:235px;grid-template-columns:58% 42%}
+  .events-directions .direction-card:nth-child(3) .direction-art{order:2}
+  .events-directions .direction-card:nth-child(4){grid-column:span 4;display:flex;flex-direction:column;min-height:345px}
+  .events-directions .direction-card:nth-child(4) .direction-art{min-height:180px;flex:1}
+  .events-directions .direction-card:nth-child(5){grid-column:span 8;grid-template-columns:34% 66%;min-height:255px}
+  .events-directions .direction-card:nth-child(6){grid-column:span 8;grid-template-columns:62% 38%;min-height:240px}
+  .events-directions .direction-card:nth-child(6) .direction-art{order:2;background:#e8d7ca;color:#98604e}
+  .events-directions .direction-card:nth-child(7){grid-column:span 4;display:flex;flex-direction:column;min-height:320px}
+  .events-directions .direction-card:nth-child(7) .direction-art{min-height:170px;flex:1;background:#d8e6db;color:#527b5b}
+}
+@media (min-width: 701px) and (max-width: 900px){
+  .events-directions .direction-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}
+  .events-directions .direction-card{grid-column:span 3;grid-row:auto;min-height:190px}
+  .events-directions .direction-card:nth-child(1),.events-directions .direction-card:nth-child(4),.events-directions .direction-card:nth-child(6){grid-column:span 6}
+  .events-directions .direction-card:nth-child(1){display:grid;grid-template-columns:55% 45%}
+  .events-directions .direction-card:nth-child(1) .direction-art{min-height:200px}
+  .events-directions .direction-card:nth-child(3) .direction-art,.events-directions .direction-card:nth-child(6) .direction-art{order:2}
+}
+@media (max-width:700px){
+  .events-directions .direction-grid{grid-template-columns:minmax(0,1fr);gap:12px}
+  .events-directions .direction-card{min-height:145px}
+  .events-directions .direction-card:nth-child(2n) .direction-art{order:2}
+  .events-directions .direction-card:nth-child(3n){grid-template-columns:42% 58%}
+  .events-directions .direction-card:first-child{display:flex;flex-direction:column}
+  .events-directions .direction-card:first-child .direction-art{min-height:190px}
+}
