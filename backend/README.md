@@ -1,12 +1,96 @@
 # Документация бэкенда «Афиша культуры Башкортостана»
 
-Данный документ содержит детальное описание архитектуры, компонентов и руководств по разработке сервиса бэкенда.
+Сервис бэкенда интеллектуальной платформы-агрегатора и рекомендательного сервиса культурных мероприятий Республики Башкортостан (Уфа, Стерлитамак, Салават, Нефтекамск, Октябрьский и др.).
+
+Сервис построен на базе **автономного диалогового ИИ-агента (Level 3)** на LangGraph, гибридного поиска (Reciprocal Rank Fusion по PostgreSQL 16 FTS и HNSW pgvector), соблюдения 152-ФЗ (маскирование ПДн) и стандарта RFC 7807 для обработки ошибок.
 
 ---
 
-## 1. Архитектурная структура модулей (`app/`)
+## 🏗️ Стек технологий
 
-Бэкенд спроектирован по принципам Clean Architecture и разделен на изолированные слои:
+| Компонент | Технология | Описание |
+|---|---|---|
+| **Язык & Рантайм** | Python 3.12+ | Строгая типизация, Type Hints, async/await |
+| **API Фреймворк** | FastAPI | Асинхронные роуты, OpenAPI 3.1, Depends DI |
+| **ORM & Миграции** | SQLAlchemy 2.0 + Alembic | Асинхронный движок `asyncpg`, `expire_on_commit=False`, `selectinload` |
+| **База данных** | PostgreSQL 16 + pgvector | Расширения `vector`, `pg_trgm`, `btree_gist`, индексы GIN и HNSW |
+| **Валидация данных** | Pydantic v2 | `ConfigDict(from_attributes=True)`, `AwareDatetime` (`Asia/Yekaterinburg`, UTC+5) |
+| **ИИ-оркестрация** | LangGraph | StateGraph, `AsyncPostgresSaver` с пулом `psycopg_pool`, сериализация MessagePack |
+| **Circuit Breaker** | LLMCircuitBreaker | Отслеживание сбоев (CLOSED / OPEN / HALF_OPEN), защита бюджета (5₽/диалог, 25₽/день) |
+| **Логирование** | Structlog | JSON-логи, трейс сквозного `request_id`, маскирование ПДн (`PIIScrubberProcessor`) |
+| **Шлюз / Reverse Proxy** | Nginx 1.27 Alpine | Отключение буферизации для SSE (`proxy_buffering off;`) |
+
+---
+
+## 🚀 Руководство по запуску
+
+### Вариант 1. Запуск через Docker Compose (из корня репозитория)
+
+```bash
+# Запуск контейнеров (Postgres 16 + pgvector, Backend, Nginx)
+docker compose up -d --build
+
+# Применение миграций базы данных
+docker compose exec backend alembic upgrade head
+
+# Просмотр логов в реальном времени
+docker compose logs -f backend
+```
+
+- **Swagger UI:** [http://localhost/docs](http://localhost/docs)
+- **ReDoc:** [http://localhost/redoc](http://localhost/redoc)
+- **API v1 Events:** [http://localhost/api/v1/events/](http://localhost/api/v1/events/)
+- **Health:** [http://localhost/health](http://localhost/health)
+
+---
+
+### Вариант 2. Локальный запуск для разработки
+
+#### Требования:
+- Python 3.12 или 3.13
+- Работающий экземпляр PostgreSQL 16 с расширениями `vector`, `pg_trgm`, `btree_gist`
+
+```bash
+cd backend
+
+# Создание и активация виртуального окружения
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Установка зависимостей
+pip install -e .
+
+# Применение миграций Alembic
+alembic upgrade head
+
+# Запуск dev-сервера с hot-reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+---
+
+## 🧪 Запуск тестов
+
+В проекте реализован набор из **30 асинхронных тестов** на `pytest`:
+
+```bash
+cd backend
+source .venv/bin/activate
+pytest -v
+```
+
+Покрытие тестов:
+- `tests/test_core.py`: конфигурация, PIIScrubberProcessor (152-ФЗ), circuit breaker, rate limiter, RFC 7807 исключения.
+- `tests/test_schemas.py`: валидация DTO схем Pydantic v2, дат UTC+5, ProblemDetails.
+- `tests/test_models.py`: структура таблиц SQLAlchemy 2.0, TSVECTOR, Vector(1536), dedup_key, BigInteger Telegram ID.
+- `tests/test_repositories.py`: нечеткий поиск города триграммами pg_trgm, деградация гибридного поиска RRF.
+- `tests/test_services.py`: нормализация цен, дат UTC+5, возрастов, слияние дубликатов, fallback-парсер.
+- `tests/test_agent.py`: фильтрация инъекций, спотлайтинг `<untrusted_event_description>`, факт-чекинг, двухфазное подтверждение.
+- `tests/test_api_and_scenarios.py`: REST-контроллеры, SSE-стриминг, ETag/304 кэширование, бейдж отмененных событий.
+
+---
+
+## 📂 Архитектурная структура модулей (`app/`)
 
 ```
 backend/app/
@@ -21,10 +105,12 @@ backend/app/
 
 ---
 
-## 2. Системное ядро (`app/core/`)
+## ⚙️ Детальное описание слоев
+
+### 1. Системное ядро (`app/core/`)
 
 - [`config.py`](file:///home/scoof/Downloads/afisha/backend/app/core/config.py):
-  Класс `Settings` на базе `pydantic-settings`. Считывает переменные окружения: параметры подключения к PostgreSQL (`DATABASE_URL`, `CHECKPOINT_DB_URI`), параметры LLM (`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL_NAME`), а также жесткие ограничения бюджета и таймингов:
+  Класс `Settings` (`pydantic-settings`). Считывает переменные окружения (`DATABASE_URL`, `CHECKPOINT_DB_URI`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL_NAME`), а также параметры защиты:
   - `LLM_TIMEOUT_SEC = 6.0`
   - `MAX_AGENT_STEPS = 5`
   - `MAX_DIALOG_COST_RUB = 5.0`
@@ -37,7 +123,7 @@ backend/app/
   2. `psycopg_pool.AsyncConnectionPool` специально для LangGraph `AsyncPostgresSaver`. Обязательные параметры пула: `autocommit=True` и `row_factory=dict_row` для корректной работы сериализации чекпоинтов.
 
 - [`logging.py`](file:///home/scoof/Downloads/afisha/backend/app/core/logging.py):
-  Конфигурация `structlog` в формате JSON. Реализован процессор `PIIScrubberProcessor`, соответствующий требованиям 152-ФЗ. Он автоматически находит и заменяет на `[SCRUBBED]`:
+  Конфигурация `structlog` в формате JSON. Реализован процессор `PIIScrubberProcessor`, соответствующий требованиям 152-ФЗ. Он автоматически маскирует на `[SCRUBBED]`:
   - Российские телефонные номера (`+7...`, `89...`, `8...`)
   - Адреса электронной почты
   - IPv4 и IPv6 адреса
@@ -67,14 +153,14 @@ backend/app/
 
 ---
 
-## 3. Модели данных и миграции (`app/models/`, `migrations/`)
+### 2. Модели данных и миграции (`app/models/`, `migrations/`)
 
 База данных работает на **PostgreSQL 16** со следующими расширениями:
 - `vector` (pgvector): векторные эмбеддинги 1536 измерений и индекс HNSW.
 - `pg_trgm`: триграммный поиск и расчет схожести названий/городов.
 - `btree_gist`: составные GiST-индексы.
 
-### Таблицы:
+#### Таблицы:
 1. `cities` — Справочник городов Башкортостана (`id`, `name`, `normalized_name`, триграммный индекс).
 2. `venues` — Справочник культурных площадок (`id`, `city_id`, `name`, `normalized_name`, `address`, `coordinates`).
 3. `raw_event_records` — Сырые данные импорта (`id`, `source_type`, `source_hash`, `raw_payload`, `status`). Гарантирует изоляцию исходных данных и возможность повторного пересчета.
@@ -91,7 +177,7 @@ backend/app/
 
 ---
 
-## 4. Слой доступа к данным (`app/repositories/`)
+### 3. Слой доступа к данным (`app/repositories/`)
 
 Все методы репозиториев строго асинхронны и используют `AsyncSession`.
 
@@ -111,7 +197,7 @@ backend/app/
 
 ---
 
-## 5. Сервисный слой (`app/services/`)
+### 4. Сервисный слой (`app/services/`)
 
 - [`normalization_service.py`](file:///home/scoof/Downloads/afisha/backend/app/services/normalization_service.py):
   - Нормализация заголовков (удаление мусора, лишних пробелов, HTML-тегов).
@@ -132,7 +218,7 @@ backend/app/
 
 ---
 
-## 6. ИИ-агент на LangGraph (`app/agent/`)
+### 5. ИИ-агент на LangGraph (`app/agent/`)
 
 Архитектура агента реализует **3-й уровень автономности**:
 
@@ -168,7 +254,7 @@ flowchart TD
 
 ---
 
-## 7. Контроллеры API (`app/api/`)
+### 6. Контроллеры API (`app/api/`)
 
 - `GET /api/v1/events/`: публичный каталог с фильтрацией, сортировкой, пагинацией и диагностикой пустой выдачи.
 - `GET /api/v1/events/{event_id}`: карточка мероприятия с поддержкой HTTP заголовков `Cache-Control`, `ETag` и `304 Not Modified`. Отмененные события возвращают `cancelled_badge`.
