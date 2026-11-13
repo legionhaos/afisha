@@ -1,0 +1,2856 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Афиша культуры Башкортостана",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Поиск и фильтрация мероприятий каталога",
+        "description": "Возвращает пагинированный список событий с поддержкой гибридного поиска и объяснением пустой выдачи.",
+        "operationId": "events_list_events_api_v1_events",
+        "parameters": [
+          {
+            "name": "query_text",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Поисковый текстовый запрос",
+              "title": "Query Text"
+            },
+            "description": "Поисковый текстовый запрос"
+          },
+          {
+            "name": "city",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Город проведения",
+              "title": "City"
+            },
+            "description": "Город проведения"
+          },
+          {
+            "name": "venue",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Площадка",
+              "title": "Venue"
+            },
+            "description": "Площадка"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EventCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Категория",
+              "title": "Category"
+            },
+            "description": "Категория"
+          },
+          {
+            "name": "date_preset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "today",
+                    "tomorrow",
+                    "weekend",
+                    "week"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Быстрый выбор периода относительно таймзоны Уфы (UTC+5)",
+              "title": "Date Preset"
+            },
+            "description": "Быстрый выбор периода относительно таймзоны Уфы (UTC+5)"
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Нижняя граница даты проведения",
+              "title": "Date From"
+            },
+            "description": "Нижняя граница даты проведения"
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Верхняя граница даты проведения",
+              "title": "Date To"
+            },
+            "description": "Верхняя граница даты проведения"
+          },
+          {
+            "name": "price_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Максимальная цена билета",
+              "title": "Price Max"
+            },
+            "description": "Максимальная цена билета"
+          },
+          {
+            "name": "is_free",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Только бесплатные мероприятия",
+              "title": "Is Free"
+            },
+            "description": "Только бесплатные мероприятия"
+          },
+          {
+            "name": "age_limit_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 18,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Максимальный возраст (0, 6, 12, 16, 18)",
+              "title": "Age Limit Max"
+            },
+            "description": "Максимальный возраст (0, 6, 12, 16, 18)"
+          },
+          {
+            "name": "max_duration_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Максимальная длительность в минутах",
+              "title": "Max Duration Min"
+            },
+            "description": "Максимальная длительность в минутах"
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Язык проведения",
+              "title": "Language"
+            },
+            "description": "Язык проведения"
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Фильтр по тегам",
+              "title": "Tags"
+            },
+            "description": "Фильтр по тегам"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Номер страницы",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Номер страницы"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Количество карточек на странице",
+              "default": 10,
+              "title": "Page Size"
+            },
+            "description": "Количество карточек на странице"
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "date_start",
+                "price_min",
+                "relevance"
+              ],
+              "type": "string",
+              "description": "Поле сортировки результатов",
+              "default": "date_start",
+              "title": "Sort By"
+            },
+            "description": "Поле сортировки результатов"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEventsResponseDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{event_id}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Получение детальной карточки мероприятия",
+        "description": "Возвращает полную карточку события. Отмененные события возвращаются со статусом cancelled и пометкой.",
+        "operationId": "events_get_event_detail_api_v1_events_event_id",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventCardDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dictionaries": {
+      "get": {
+        "tags": [
+          "dictionaries"
+        ],
+        "summary": "Сводные справочники городов, площадок и категорий",
+        "operationId": "dictionaries_get_all_dictionaries_api_v1_dictionaries",
+        "parameters": [
+          {
+            "name": "city",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Фильтр площадок по городу",
+              "title": "City"
+            },
+            "description": "Фильтр площадок по городу"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictionariesResponseDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dictionaries/cities": {
+      "get": {
+        "tags": [
+          "dictionaries"
+        ],
+        "summary": "Справочник городов Республики Башкортостан",
+        "operationId": "dictionaries_get_cities_api_v1_dictionaries_cities",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CityDTO"
+                  },
+                  "type": "array",
+                  "title": "Response Dictionaries Get Cities Api V1 Dictionaries Cities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dictionaries/venues": {
+      "get": {
+        "tags": [
+          "dictionaries"
+        ],
+        "summary": "Справочник площадок",
+        "operationId": "dictionaries_get_venues_api_v1_dictionaries_venues",
+        "parameters": [
+          {
+            "name": "city",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "City"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VenueDTO"
+                  },
+                  "title": "Response Dictionaries Get Venues Api V1 Dictionaries Venues"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dictionaries/categories": {
+      "get": {
+        "tags": [
+          "dictionaries"
+        ],
+        "summary": "Справочник категорий с подсчетом активных мероприятий",
+        "operationId": "dictionaries_get_categories_api_v1_dictionaries_categories",
+        "parameters": [
+          {
+            "name": "city",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "City"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryStatsDTO"
+                  },
+                  "title": "Response Dictionaries Get Categories Api V1 Dictionaries Categories"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Синхронный диалог с интеллектуальным агентом",
+        "description": "Основной эндпоинт для Telegram-бота и синхронных клиентов. Возвращает ответ и проверенные карточки.",
+        "operationId": "chat_chat_message_sync_api_v1_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageResponseDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/stream": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Потоковый Server-Sent Events (SSE) диалог с агентом",
+        "description": "Потоковый вывод токенов и карточек для веб-интерфейса и виджета с отправкой heartbeat каждые 10 секунд.",
+        "operationId": "chat_chat_message_stream_api_v1_chat_stream",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions": {
+      "post": {
+        "tags": [
+          "subscriptions"
+        ],
+        "summary": "Оформление подписки на мероприятия",
+        "operationId": "subscriptions_create_subscription_api_v1_subscriptions",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionCreateDTO"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionReadDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "subscriptions"
+        ],
+        "summary": "Список активных подписок пользователя",
+        "operationId": "subscriptions_list_user_subscriptions_api_v1_subscriptions",
+        "parameters": [
+          {
+            "name": "user_identifier",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "title": "User Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SubscriptionReadDTO"
+                  },
+                  "title": "Response Subscriptions List User Subscriptions Api V1 Subscriptions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{user_identifier}": {
+      "delete": {
+        "tags": [
+          "subscriptions"
+        ],
+        "summary": "Отписка от уведомлений (одной подписки или всех сразу командой /unsubscribe)",
+        "operationId": "subscriptions_delete_subscriptions_api_v1_subscriptions_user_identifier",
+        "parameters": [
+          {
+            "name": "user_identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Identifier"
+            }
+          },
+          {
+            "name": "subscription_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Опциональный ID конкретной подписки. Если не передан — удаляются все подписки",
+              "title": "Subscription Id"
+            },
+            "description": "Опциональный ID конкретной подписки. Если не передан — удаляются все подписки"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Subscriptions Delete Subscriptions Api V1 Subscriptions User Identifier"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Отправка обращения от жителя или организатора",
+        "operationId": "feedback_submit_feedback_api_v1_feedback",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackCreateDTO"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReadDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Просмотр тикетов обратной связи (для администратора)",
+        "operationId": "feedback_list_feedback_tickets_api_v1_feedback",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FeedbackStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FeedbackReadDTO"
+                  },
+                  "title": "Response Feedback List Feedback Tickets Api V1 Feedback"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/import": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Идемпотентный импорт мероприятий из файла CSV или JSON",
+        "operationId": "admin_import_events_file_api_v1_admin_import",
+        "parameters": [
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_import_events_file_api_v1_admin_import"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReportDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/replay-normalization": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Переигровка нормализации по сохраненным сырым записям",
+        "operationId": "admin_replay_normalization_api_v1_admin_replay-normalization",
+        "parameters": [
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReportDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/moderation": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Очередь модерации спорных карточек и черновиков",
+        "operationId": "admin_get_moderation_queue_api_v1_admin_moderation",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEventsResponseDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/events/{event_id}": {
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Модерация или снятие события (перевод в CANCELLED)",
+        "operationId": "admin_moderate_event_api_v1_admin_events_event_id",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventUpdateAdminDTO"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventCardDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Журнал аудита действий модераторов и системы",
+        "operationId": "admin_list_audit_logs_api_v1_admin_audit-logs",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Admin List Audit Logs Api V1 Admin Audit-Logs"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/traces/{trace_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Просмотр полной трассы рассуждений и инструментов ИИ-агента",
+        "operationId": "admin_get_agent_trace_by_id_api_v1_admin_traces_trace_id",
+        "parameters": [
+          {
+            "name": "trace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trace Id"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Admin Get Agent Trace By Id Api V1 Admin Traces Trace Id"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Проверка состояния здоровья сервиса",
+        "operationId": "health_health_check_api_v1_health",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Check Api V1 Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Проверка состояния здоровья сервиса",
+        "operationId": "health_health_check_health",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Check Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentRecommendationItemDTO": {
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EventCardDTO",
+            "description": "Карточка мероприятия"
+          },
+          "constraint_match_explanation": {
+            "type": "string",
+            "title": "Constraint Match Explanation",
+            "description": "Объяснение, каким именно ограничениям пользователя соответствует карточка"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event",
+          "constraint_match_explanation"
+        ],
+        "title": "AgentRecommendationItemDTO",
+        "description": "Рекомендация мероприятия с обоснованием соответствия ограничениям."
+      },
+      "Body_admin_import_events_file_api_v1_admin_import": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_admin_import_events_file_api_v1_admin_import"
+      },
+      "CategoryStatsDTO": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/EventCategory",
+            "description": "Код категории"
+          },
+          "title_ru": {
+            "type": "string",
+            "title": "Title Ru",
+            "description": "Отображаемое название на русском"
+          },
+          "events_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Events Count",
+            "description": "Количество активных событий",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "title_ru"
+        ],
+        "title": "CategoryStatsDTO",
+        "description": "Справочник категорий с количеством опубликованных событий."
+      },
+      "ChatMessageRequestDTO": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Thread Id",
+            "description": "Идентификатор сессии диалога (short-term memory)"
+          },
+          "user_identifier": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Identifier",
+            "description": "Анонимизированный идентификатор пользователя"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "description": "Свободный текст запроса пользователя"
+          },
+          "confirm_action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Action Id",
+            "description": "Токен подтверждения изменения данных (двухфазная мутация)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "user_identifier",
+          "message"
+        ],
+        "title": "ChatMessageRequestDTO",
+        "description": "Входной запрос к интеллектуальному ИИ-агенту."
+      },
+      "ChatMessageResponseDTO": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "ID сессии диалога"
+          },
+          "trace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Trace Id",
+            "description": "Идентификатор сохраненной трассы выполнения агента"
+          },
+          "reply_text": {
+            "type": "string",
+            "title": "Reply Text",
+            "description": "Текстовый ответ агента"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRecommendationItemDTO"
+            },
+            "type": "array",
+            "title": "Recommendations",
+            "description": "Список рекомендованных мероприятий (до 5 штук)"
+          },
+          "clarifying_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarifying Question",
+            "description": "Ровно 1 уточняющий вопрос при неоднозначности параметров"
+          },
+          "requires_confirmation": {
+            "type": "boolean",
+            "title": "Requires Confirmation",
+            "description": "Требуется ли явное подтверждение пользователя для изменения данных",
+            "default": false
+          },
+          "pending_action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Action Id",
+            "description": "Идентификатор отложенного действия (подписка / обратная связь)"
+          },
+          "pending_action_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Action Summary",
+            "description": "Описание требующего подтверждения действия на русском языке"
+          },
+          "is_fallback_mode": {
+            "type": "boolean",
+            "title": "Is Fallback Mode",
+            "description": "Флаг активации резервного детерминированного поиска без LLM",
+            "default": false
+          },
+          "fallback_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Notice",
+            "description": "Предупреждение о переходе в резервный режим при сбое модели"
+          },
+          "data_grounded_badge": {
+            "type": "string",
+            "title": "Data Grounded Badge",
+            "description": "Гарантия отсутствия галлюцинаций (Zero Hallucination Policy)",
+            "default": "Ответ построен исключительно по проверенным данным сервиса"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "trace_id",
+          "reply_text"
+        ],
+        "title": "ChatMessageResponseDTO",
+        "description": "Финальный ответ ИИ-агента с карточками и обоснованием."
+      },
+      "CityDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "ID города"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Официальное название (Уфа, Стерлитамак и т.д.)"
+          },
+          "normalized_name": {
+            "type": "string",
+            "title": "Normalized Name",
+            "description": "Нормализованное название для нечеткого поиска"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat",
+            "description": "Географическая широта центра"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon",
+            "description": "Географическая долгота центра"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "normalized_name"
+        ],
+        "title": "CityDTO",
+        "description": "Город или населенный пункт Республики Башкортостан."
+      },
+      "DictionariesResponseDTO": {
+        "properties": {
+          "cities": {
+            "items": {
+              "$ref": "#/components/schemas/CityDTO"
+            },
+            "type": "array",
+            "title": "Cities"
+          },
+          "venues": {
+            "items": {
+              "$ref": "#/components/schemas/VenueDTO"
+            },
+            "type": "array",
+            "title": "Venues"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryStatsDTO"
+            },
+            "type": "array",
+            "title": "Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cities",
+          "venues",
+          "categories"
+        ],
+        "title": "DictionariesResponseDTO",
+        "description": "Сводный ответ справочников для фильтров каталога."
+      },
+      "EmptyResultExplanationDTO": {
+        "properties": {
+          "is_empty": {
+            "type": "boolean",
+            "title": "Is Empty",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Человекочитаемое объяснение, почему ничего не найдено"
+          },
+          "blocking_constraints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocking Constraints",
+            "description": "Ограничения, которые заблокировали выдачу (цена, дата, возраст)"
+          },
+          "suggested_relaxations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggested Relaxations",
+            "description": "Рекомендации по ослаблению параметров поиска"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "EmptyResultExplanationDTO",
+        "description": "Диагностика пустого результата поиска по требованиям ТЗ."
+      },
+      "EventCardDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Уникальный идентификатор события"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Название мероприятия"
+          },
+          "normalized_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Title",
+            "description": "Нормализованное название для поиска"
+          },
+          "category": {
+            "$ref": "#/components/schemas/EventCategory",
+            "description": "Категория мероприятия"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags",
+            "description": "Теги мероприятия"
+          },
+          "date_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date Start",
+            "description": "Дата и время начала в UTC+5"
+          },
+          "date_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date End",
+            "description": "Дата и время окончания"
+          },
+          "duration_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Min",
+            "description": "Длительность в минутах"
+          },
+          "city": {
+            "type": "string",
+            "title": "City",
+            "description": "Город проведения"
+          },
+          "venue": {
+            "type": "string",
+            "title": "Venue",
+            "description": "Площадка проведения"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "Точный адрес площадки"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat",
+            "description": "Широта"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon",
+            "description": "Долгота"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Полное описание мероприятия"
+          },
+          "price_min": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Price Min",
+            "description": "Минимальная цена билета в рублях",
+            "default": 0
+          },
+          "price_max": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Price Max",
+            "description": "Максимальная цена билета в рублях",
+            "default": 0
+          },
+          "is_free": {
+            "type": "boolean",
+            "title": "Is Free",
+            "description": "Признак бесплатного входа",
+            "default": false
+          },
+          "age_limit": {
+            "type": "integer",
+            "maximum": 18.0,
+            "minimum": 0.0,
+            "title": "Age Limit",
+            "description": "Возрастной ценз: 0, 6, 12, 16, 18",
+            "default": 0
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language",
+            "description": "Язык проведения (русский, башкирский и др.)"
+          },
+          "org_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Link",
+            "description": "Ссылка организатора на покупку билетов"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "description": "Основная ссылка на источник"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EventStatus",
+            "description": "Статус публикации",
+            "default": "published"
+          },
+          "cancelled_badge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled Badge",
+            "description": "Явная пометка, если мероприятие отменено, но открыто по прямой ссылке"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Уверенность парсинга",
+            "default": 1.0
+          },
+          "is_disputed": {
+            "type": "boolean",
+            "title": "Is Disputed",
+            "description": "Флаг спорной карточки",
+            "default": false
+          },
+          "dispute_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModerationReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Причина отправки на модерацию"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verified At",
+            "description": "Время последней проверки данных"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/EventSourceDTO"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "Источники, сведенные при дедупликации"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "category",
+          "date_start",
+          "city",
+          "venue",
+          "address",
+          "description",
+          "source_url",
+          "verified_at"
+        ],
+        "title": "EventCardDTO",
+        "description": "Публичная нормализованная карточка мероприятия."
+      },
+      "EventCategory": {
+        "type": "string",
+        "enum": [
+          "concert",
+          "theater",
+          "exhibition",
+          "festival",
+          "cinema",
+          "excursion",
+          "other"
+        ],
+        "title": "EventCategory",
+        "description": "Категории культурных мероприятий Республики Башкортостан."
+      },
+      "EventSourceDTO": {
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "description": "URL оригинального источника"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/SourceType",
+            "description": "Тип источника"
+          },
+          "merged_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Merged At",
+            "description": "Время слияния данных"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_url",
+          "source_type",
+          "merged_at"
+        ],
+        "title": "EventSourceDTO",
+        "description": "Информация об источнике данных, сведенном в карточку."
+      },
+      "EventStatus": {
+        "type": "string",
+        "enum": [
+          "published",
+          "draft",
+          "cancelled"
+        ],
+        "title": "EventStatus",
+        "description": "Статусы публикации мероприятия."
+      },
+      "EventUpdateAdminDTO": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "date_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Start"
+          },
+          "date_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date End"
+          },
+          "duration_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Min"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "venue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Venue"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "price_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Min"
+          },
+          "price_max": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Max"
+          },
+          "is_free": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Free"
+          },
+          "age_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Limit"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "org_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Link"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_disputed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Disputed"
+          },
+          "dispute_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModerationReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "moderator_actor": {
+            "type": "string",
+            "title": "Moderator Actor",
+            "description": "Идентификатор модератора для журнала аудита"
+          }
+        },
+        "type": "object",
+        "required": [
+          "moderator_actor"
+        ],
+        "title": "EventUpdateAdminDTO",
+        "description": "Схема модерации/обновления карточки события администратором."
+      },
+      "FeedbackCreateDTO": {
+        "properties": {
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id",
+            "description": "ID мероприятия, если обращение связано с ним"
+          },
+          "sender_identifier": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Sender Identifier",
+            "description": "Идентификатор отправителя"
+          },
+          "message_text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Message Text",
+            "description": "Текст сообщения или уточнения"
+          },
+          "honeypot": {
+            "type": "string",
+            "title": "Honeypot",
+            "description": "Ловушка для спам-ботов, должна оставаться пустой",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "sender_identifier",
+          "message_text"
+        ],
+        "title": "FeedbackCreateDTO",
+        "description": "Схема отправки обращения от организатора или жителя."
+      },
+      "FeedbackReadDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "ID тикета"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id",
+            "description": "Связанное мероприятие"
+          },
+          "sender_identifier": {
+            "type": "string",
+            "title": "Sender Identifier",
+            "description": "Отправитель"
+          },
+          "message_text": {
+            "type": "string",
+            "title": "Message Text",
+            "description": "Текст обращения"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FeedbackStatus",
+            "description": "Статус обработки",
+            "default": "new"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Время подачи обращения"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sender_identifier",
+          "message_text",
+          "created_at"
+        ],
+        "title": "FeedbackReadDTO",
+        "description": "Схема чтения обратной связи."
+      },
+      "FeedbackStatus": {
+        "type": "string",
+        "enum": [
+          "new",
+          "processed",
+          "rejected"
+        ],
+        "title": "FeedbackStatus",
+        "description": "Статусы обработки обращений организаторов и жителей."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImportReportDTO": {
+        "properties": {
+          "total_received": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Received",
+            "description": "Всего обработано строк",
+            "default": 0
+          },
+          "added_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Added Count",
+            "description": "Успешно добавлено новых карточек",
+            "default": 0
+          },
+          "updated_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Updated Count",
+            "description": "Обновлено существующих карточек",
+            "default": 0
+          },
+          "deduplicated_merged_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Deduplicated Merged Count",
+            "description": "Сведено дубликатов из разных источников",
+            "default": 0
+          },
+          "flagged_for_moderation_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Flagged For Moderation Count",
+            "description": "Отправлено в очередь модерации",
+            "default": 0
+          },
+          "rejected_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rejected Count",
+            "description": "Отклонено из-за критических ошибок",
+            "default": 0
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ImportReportItemErrorDTO"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Список всех отклоненных строк с описанием причин"
+          }
+        },
+        "type": "object",
+        "title": "ImportReportDTO",
+        "description": "Сводный отчет по результатам пакетного импорта CSV или JSON."
+      },
+      "ImportReportItemErrorDTO": {
+        "properties": {
+          "row_index": {
+            "type": "integer",
+            "title": "Row Index",
+            "description": "Порядковый номер строки в файле"
+          },
+          "raw_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Title",
+            "description": "Исходный заголовок из строки"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "Причина отклонения на понятном русском языке"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row_index",
+          "reason"
+        ],
+        "title": "ImportReportItemErrorDTO",
+        "description": "Детализация отклоненной строки при импорте."
+      },
+      "ModerationReason": {
+        "type": "string",
+        "enum": [
+          "low_confidence",
+          "missing_required_fields",
+          "potential_duplicate",
+          "prompt_injection_suspected",
+          "manual_flag"
+        ],
+        "title": "ModerationReason",
+        "description": "Причины отправки карточки в очередь модерации."
+      },
+      "PaginatedEventsResponseDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventCardDTO"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Найденные мероприятия"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "description": "Общее количество"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page",
+            "description": "Текущая страница"
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page Size",
+            "description": "Размер страницы"
+          },
+          "empty_explanation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmptyResultExplanationDTO"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Диагностика пустой выдачи при total == 0"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedEventsResponseDTO",
+        "description": "Ответ каталога с пагинацией и объяснением пустой выдачи."
+      },
+      "SourceType": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "import",
+          "rss",
+          "api",
+          "page"
+        ],
+        "title": "SourceType",
+        "description": "Типы источников данных о мероприятиях."
+      },
+      "SubscriptionCreateDTO": {
+        "properties": {
+          "user_identifier": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "User Identifier",
+            "description": "Хеш или анонимный ID пользователя"
+          },
+          "telegram_chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Chat Id",
+            "description": "BIGINT Telegram chat ID (64-bit safe)"
+          },
+          "city": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "City",
+            "description": "Город подписки"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Категория (None - все категории)"
+          },
+          "period_type": {
+            "type": "string",
+            "title": "Period Type",
+            "description": "Периодичность: weekend, all",
+            "default": "all"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_identifier",
+          "city"
+        ],
+        "title": "SubscriptionCreateDTO",
+        "description": "Схема создания подписки пользователя без лишних ПДн (152-ФЗ)."
+      },
+      "SubscriptionReadDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "ID подписки"
+          },
+          "user_identifier": {
+            "type": "string",
+            "title": "User Identifier",
+            "description": "Идентификатор пользователя"
+          },
+          "telegram_chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Chat Id",
+            "description": "BIGINT ID чата Telegram"
+          },
+          "city": {
+            "type": "string",
+            "title": "City",
+            "description": "Город подписки"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventCategory"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Категория"
+          },
+          "period_type": {
+            "type": "string",
+            "title": "Period Type",
+            "description": "Периодичность"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Статус активности",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Время создания подписки"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At",
+            "description": "Время истечения подписки"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_identifier",
+          "city",
+          "period_type",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "SubscriptionReadDTO",
+        "description": "Схема чтения подписки пользователя."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VenueDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "ID площадки"
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "City Id",
+            "description": "ID города размещения"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Название площадки"
+          },
+          "normalized_name": {
+            "type": "string",
+            "title": "Normalized Name",
+            "description": "Нормализованное название"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "Адрес площадки"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat",
+            "description": "Широта"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon",
+            "description": "Долгота"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "city_id",
+          "name",
+          "normalized_name",
+          "address"
+        ],
+        "title": "VenueDTO",
+        "description": "Площадка проведения мероприятий (театр, ДК, музей, парк)."
+      }
+    }
+  }
+}
