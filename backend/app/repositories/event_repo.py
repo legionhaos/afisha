@@ -317,6 +317,14 @@ class EventRepository:
             existing.tags = list(set(existing.tags + incoming_tags))
             existing.verified_at = event_data.get("verified_at", datetime.now(existing.verified_at.tzinfo))
 
+            if event_data.get("status") == EventStatus.CANCELLED:
+                existing.status = EventStatus.CANCELLED
+
+            if existing.price_min == 0 and existing.price_max == 0 and not existing.is_free:
+                existing.price_min = event_data.get("price_min", 0)
+                existing.price_max = event_data.get("price_max", 0)
+                existing.is_free = event_data.get("is_free", False)
+
             # Add source entry
             src = EventSource(
                 id=uuid4(),
