@@ -44,6 +44,18 @@ async def test_incomplete_prices_are_not_published(price):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("price", [0, "0", "0 рублей"])
+async def test_zero_price_remains_free(price):
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(price=price), 1, "test", "request", report)
+    assert report.added_count == 1
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert (data["price_min"], data["price_max"], data["is_free"]) == (0, 0, True)
+
+
+@pytest.mark.asyncio
 async def test_replay_reuses_source_and_preserves_cancellation():
     svc = service()
     raw = SimpleNamespace(id=uuid4(), source_hash="a" * 64, processed_event_id=uuid4(), raw_payload=payload())

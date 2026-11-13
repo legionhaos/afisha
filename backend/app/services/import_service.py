@@ -182,6 +182,7 @@ class ImportService:
             raise ValueError("Некорректный признак бесплатного входа")
         explicitly_free = free_text in ("true", "1", "yes", "да")
         low, high = raw_row.get("price_min"), raw_row.get("price_max")
+        explicitly_paid = free_text in ("false", "0", "no", "нет")
         has_low = low is not None and str(low).strip() != ""
         has_high = high is not None and str(high).strip() != ""
         text_price = next((raw_row[key] for key in ("price_text", "price", "cost")
@@ -193,6 +194,8 @@ class ImportService:
             if explicitly_free and (price_min or price_max):
                 raise ValueError("Цена противоречит бесплатному входу")
             is_free = explicitly_free or (price_min == 0 and price_max == 0)
+            if explicitly_paid and is_free:
+                raise ValueError("Цена противоречит платному входу")
         elif explicitly_free and not has_low and not has_high and text_price is None:
             price_min, price_max, is_free = 0, 0, True
         else:
@@ -211,8 +214,10 @@ class ImportService:
             if len(numbers) == 2 and int(numbers[0]) > int(numbers[1]):
                 raise ValueError("Минимальная цена больше максимальной")
             price_min, price_max, is_free = self.norm_service.parse_price_text(text_price)
-            if numbers and is_free:
+            if numbers and is_free and any(int(number) != 0 for number in numbers):
                 raise ValueError("Цена противоречит бесплатному входу")
+            if explicitly_paid and is_free:
+                raise ValueError("Цена противоречит платному входу")
             if not numbers and not is_free:
                 raise ValueError("Не удалось разобрать цену")
             if explicitly_free and not is_free:
