@@ -9,22 +9,16 @@ os.environ["LANGGRAPH_STRICT_MSGPACK"] = "true"
 
 
 def trim_conversation_history(
-    messages: list[BaseMessage],
+    messages: list[Any],
     min_turns: int = 5,
     max_messages: int = 14,
-) -> list[BaseMessage]:
+) -> list[Any]:
     """Обрезает историю сообщений, сохраняя системный промпт и не менее 5 реплик (10-14 сообщений)."""
     if not messages:
         return []
 
-    system_msgs: list[BaseMessage] = []
-    other_msgs: list[BaseMessage] = []
-
-    for msg in messages:
-        if isinstance(msg, SystemMessage):
-            system_msgs.append(msg)
-        else:
-            other_msgs.append(msg)
+    system_msgs = [m for m in messages if getattr(m, "type", None) == "system" or isinstance(m, SystemMessage)]
+    other_msgs = [m for m in messages if getattr(m, "type", None) != "system" and not isinstance(m, SystemMessage)]
 
     # Preserve complete human/tool turns, even when they exceed the soft limit.
     human_indices = [i for i, msg in enumerate(other_msgs) if getattr(msg, "type", None) == "human"]

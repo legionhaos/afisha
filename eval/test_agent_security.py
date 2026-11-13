@@ -127,13 +127,17 @@ class StreamingTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         def module(name, **attrs):
             result = types.ModuleType(name)
+            result.__path__ = []
             result.__dict__.update(attrs)
             return result
-        messages = module('langchain_core.messages', AIMessage=object, HumanMessage=object, SystemMessage=object, ToolMessage=object)
+        messages = module('langchain_core.messages', AIMessage=object, HumanMessage=object, SystemMessage=object, ToolMessage=object, BaseMessage=object)
         stubs = {'langchain_core': module('langchain_core'), 'langchain_core.messages': messages,
+                 'langchain_openai': module('langchain_openai', ChatOpenAI=object),
                  'langgraph': module('langgraph'), 'langgraph.graph': module('langgraph.graph', END='end', START='start', StateGraph=object),
                  'app': module('app'), 'app.agent': module('app.agent'), 'app.schemas': module('app.schemas'),
-                 'app.agent.checkpointer': checkpointer, 'app.agent.prompts': module('app.agent.prompts', SYSTEM_PROMPT=''),
+                 'app.agent.guardrails': guardrails,
+                 'app.agent.tools': module('app.agent.tools', AgentToolsFactory=object),
+                 'app.agent.checkpointer': checkpointer, 'app.agent.prompts': module('app.agent.prompts', SYSTEM_PROMPT='', get_system_prompt=lambda: ''),
                  'app.agent.state': module('app.agent.state', AgentGraphState=dict),
                  'app.schemas.chat': module('app.schemas.chat', AgentRecommendationItemDTO=object, ChatMessageResponseDTO=object)}
         patcher = patch.dict(sys.modules, stubs)
