@@ -87,10 +87,12 @@ class ImportService:
                 suspicious = not result[0]
             if suspicious:
                 reason = ModerationReason.PROMPT_INJECTION_SUSPECTED
+            raw_status = str(payload.get("status") or "").strip().casefold().replace("ё", "е")
+            cancelled = raw_status in {"cancelled", "canceled", "отменено", "отменен", "отменена"}
             data.update(source_type=raw.source_type, source_hash=raw.source_hash, source_url=raw.source_url,
                         confidence=confidence, verified_at=datetime.now(timezone.utc),
                         is_disputed=reason is not None, dispute_reason=reason.value if reason else None,
-                        status=EventStatus.DRAFT if reason else EventStatus.PUBLISHED)
+                        status=EventStatus.CANCELLED if cancelled else EventStatus.DRAFT if reason else EventStatus.PUBLISHED)
             data["dedup_key"] = dedup_key
             existing = await self.event_repo.get_by_dedup_key(data["dedup_key"])
             if not existing:

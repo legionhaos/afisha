@@ -13,6 +13,7 @@ YEKT_TZ = ZoneInfo("Asia/Yekaterinburg")
 class NormalizationService:
     def normalize_title(self, raw_title: str) -> str:
         text = raw_title.lower().replace("ё", "е")
+        text = re.sub(r"\s*[\(\[]\s*(?:отменено|отменен|дубликат[^\)\]]*)\s*[\)\]]", " ", text)
         text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
         text = re.sub(r"^(?:(?:концерт|спектакль|премьера)\b\s*)+", "", text.strip())
         return " ".join(text.split())

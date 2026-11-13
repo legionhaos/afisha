@@ -155,6 +155,8 @@ class EventRepository:
 
             for field, value in DeduplicationService().merge_event_fields(event, data).items():
                 setattr(event, field, value)
+            if data.get('status') == EventStatus.CANCELLED:
+                event.status = EventStatus.CANCELLED
             if data.get('is_disputed'):
                 event.is_disputed = True
                 event.dispute_reason = data.get('dispute_reason')
