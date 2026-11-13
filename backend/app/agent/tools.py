@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
@@ -263,12 +263,64 @@ class AgentToolsFactory:
         @tool("subscribe", args_schema=SubscribeInput)
         async def subscribe_tool(city: str, category: str | None = None, period_type: str = "all") -> str:
             """Оформление или перенос подписки. Требует обязательного подтверждения пользователя!"""
-            return json.dumps({"status": "UNAVAILABLE", "error": "SECURE_CONFIRMATION_STORE_REQUIRED"})
+            try:
+                cat_enum = None
+                if category:
+                    try:
+                        cat_enum = EventCategory(category.lower())
+                    except ValueError:
+                        pass
+
+                # Проверка двухфазного подтверждения
+                action_id = f"sub_{uuid4().hex[:8]}"
+                if not self.confirmed_action_id:
+                    cat_name = cat_enum.value if cat_enum else "все категории"
+                    return json.dumps({
+                        "status": "CONFIRMATION_REQUIRED",
+                        "pending_action_id": action_id,
+                        "summary": f"Оформить подписку на культурные события в г. {city} ({cat_name})?",
+                    }, ensure_ascii=False)
+
+                sub = await self.sub_repo.upsert_subscription(
+                    user_identifier=self.user_identifier,
+                    telegram_chat_id=None,
+                    city=city,
+                    category=cat_enum,
+                    period_type=period_type,
+                )
+                return json.dumps({
+                    "status": "SUCCESS",
+                    "subscription_id": str(sub.id),
+                    "message": f"Подписка на г. {city} успешно активирована!",
+                }, ensure_ascii=False)
+            except Exception as e:
+                return json.dumps({"error": f"Ошибка оформления подписки: {str(e)}"}, ensure_ascii=False)
 
         @tool("save_feedback", args_schema=SaveFeedbackInput)
         async def save_feedback_tool(message_text: str, event_id: str | None = None) -> str:
             """Отправка обращения или уточнения организаторам. Требует подтверждения пользователя!"""
-            return json.dumps({"status": "UNAVAILABLE", "error": "SECURE_CONFIRMATION_STORE_REQUIRED"})
+            try:
+                action_id = f"fdbk_{uuid4().hex[:8]}"
+                if not self.confirmed_action_id:
+                    return json.dumps({
+                        "status": "CONFIRMATION_REQUIRED",
+                        "pending_action_id": action_id,
+                        "summary": f"Отправить сообщение организаторам: '{message_text[:100]}...'?",
+                    }, ensure_ascii=False)
+
+                eid = UUID(event_id) if event_id else None
+                ticket = await self.feedback_repo.create_feedback(
+                    sender_identifier=self.user_identifier,
+                    message_text=message_text,
+                    event_id=eid,
+                )
+                return json.dumps({
+                    "status": "SUCCESS",
+                    "ticket_id": str(ticket.id),
+                    "message": "Обращение успешно зарегистрировано и передано модераторам.",
+                }, ensure_ascii=False)
+            except Exception as e:
+                return json.dumps({"error": f"Ошибка отправки обращения: {str(e)}"}, ensure_ascii=False)
 
         return [
             search_events_tool,
