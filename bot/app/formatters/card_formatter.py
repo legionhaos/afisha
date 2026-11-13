@@ -22,7 +22,7 @@ def format_card(event: dict[str, Any]) -> str:
         lines.append(event.get('cancelled_badge') or 'Мероприятие отменено')
     if event.get('description'):
         lines.append(event['description'][:1200])
-    if event.get('source_url'):
+    if event.get('source_url') and event['source_url'] != 'https://example.org/demo':
         lines.append('Источник: ' + event['source_url'])
     if event.get('org_link'):
         lines.append('Организатор: ' + event['org_link'])
