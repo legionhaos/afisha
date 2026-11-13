@@ -358,13 +358,14 @@ class ImportService:
                         report=report,
                         replay_record=record,
                     )
-                except Exception as e:
+                except (ValueError, TypeError) as exc:
                     report.rejected_count += 1
+                    title = record.raw_payload.get("title")
                     report.errors.append(
                         ImportReportItemErrorDTO(
                             row_index=idx,
-                            raw_title=str(record.raw_payload.get("title")),
-                            reason=f"Ошибка переигровки нормализации: {str(e)}",
+                            raw_title=str(title) if title is not None else None,
+                            reason=f"Ошибка переигровки нормализации: {exc}",
                         )
                     )
                 idx += 1

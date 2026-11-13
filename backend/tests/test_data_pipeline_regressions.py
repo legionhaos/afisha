@@ -90,6 +90,20 @@ async def test_replay_reuses_source_and_preserves_cancellation():
     svc.event_repo.create_or_update_event.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_replay_propagates_database_failures():
+    svc = service()
+    raw = SimpleNamespace(id=uuid4(), source_hash="a" * 64, processed_event_id=uuid4(), raw_payload=payload())
+
+    async def batches(batch_size):
+        yield [raw]
+
+    svc.raw_repo.list_all_for_replay = batches
+    svc.event_repo.get_by_id.side_effect = RuntimeError("database unavailable")
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await svc.replay_all_normalizations("test", "request")
+
+
 def test_age_is_not_inferred_from_arbitrary_description_numbers():
     norm = NormalizationService()
     assert norm.normalize_age_limit(None, "Концерт начинается в 19:00, билеты от 500 рублей") == 0
