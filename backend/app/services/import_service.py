@@ -153,8 +153,31 @@ class ImportService:
         description = str(raw_row.get("description") or title).strip()
 
         # Цены
-        raw_price = raw_row.get("price") or raw_row.get("price_min")
-        price_min, price_max, is_free = self.norm_service.parse_price_text(raw_price)
+        if (
+            "price_min" in raw_row
+            and raw_row.get("price_min") is not None
+            and "price_max" in raw_row
+            and raw_row.get("price_max") is not None
+        ):
+            try:
+                price_min = int(raw_row["price_min"])
+                price_max = int(raw_row["price_max"])
+                is_free = bool(raw_row.get("is_free", False))
+                if price_min == 0 and price_max == 0 and not is_free and raw_row.get("price_text"):
+                    price_min, price_max, is_free = self.norm_service.parse_price_text(raw_row["price_text"])
+            except (ValueError, TypeError):
+                raw_price = raw_row.get("price_text") or raw_row.get("price") or raw_row.get("cost")
+                price_min, price_max, is_free = self.norm_service.parse_price_text(raw_price)
+        else:
+            raw_price = (
+                raw_row.get("price_text")
+                or raw_row.get("price")
+                or raw_row.get("cost")
+                or raw_row.get("price_min")
+            )
+            price_min, price_max, is_free = self.norm_service.parse_price_text(raw_price)
+            if raw_row.get("is_free") is True or str(raw_row.get("is_free", "")).lower() in ("true", "1", "yes", "да"):
+                is_free = True
 
         # Возраст
         age_limit = self.norm_service.normalize_age_limit(raw_row.get("age_limit"), description)
@@ -207,10 +230,20 @@ class ImportService:
         event_dict_payload["confidence"] = confidence
         event_dict_payload["is_disputed"] = is_disputed
         event_dict_payload["dispute_reason"] = dispute_reason
-        event_dict_payload["status"] = EventStatus.DRAFT if is_disputed else EventStatus.PUBLISHED
 
-        if is_disputed:
+        # Статус публикации (с корректной фиксацией отмененных мероприятий)
+        raw_status = str(raw_row.get("status") or "").strip().lower()
+        if (
+            raw_status in ("cancelled", "отменено", "отменен", "canceled")
+            or "отменен" in raw_title_str.lower()
+            or "отменено" in raw_title_str.lower()
+        ):
+            event_dict_payload["status"] = EventStatus.CANCELLED
+        elif is_disputed:
+            event_dict_payload["status"] = EventStatus.DRAFT
             report.flagged_for_moderation_count += 1
+        else:
+            event_dict_payload["status"] = EventStatus.PUBLISHED
 
         # 6. Вычисление эмбеддинга
         embedding = await self.emb_service.generate_embedding(f"{title} {description}")

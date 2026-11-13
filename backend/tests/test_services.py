@@ -22,6 +22,11 @@ def test_normalization_service_title_clean():
     cleaned_yo = norm.normalize_title(raw_yo)
     assert cleaned_yo == "Зеленая карета"
 
+    # Status/duplicate markings removal
+    assert norm.normalize_title("Балет «Лебединое озеро» (Дубликат из другого источника)") == "Балет Лебединое озеро"
+    assert norm.normalize_title("Спектакль «Женитьба Фигаро» (ОТМЕНЕНО)") == "Спектакль Женитьба Фигаро"
+    assert norm.normalize_title("Концерт классики [ОТМЕНЕН]") == "Концерт классики"
+
 
 def test_normalization_service_price_parsing():
     norm = NormalizationService()
