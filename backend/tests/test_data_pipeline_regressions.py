@@ -181,6 +181,19 @@ def test_age_is_not_inferred_from_arbitrary_description_numbers():
 
 
 @pytest.mark.asyncio
+async def test_text_search_candidate_gate_includes_trigram_matching():
+    session = AsyncMock()
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    rows_result = MagicMock()
+    rows_result.scalars.return_value.all.return_value = []
+    session.execute.side_effect = [count_result, rows_result]
+    await EventRepository(session).hybrid_search(EventSearchFilterDTO(query_text="концерт"))
+    sql = str(session.execute.await_args_list[0].args[0].compile(dialect=postgresql.dialect()))
+    assert "events.normalized_title %%" in sql
+
+
+@pytest.mark.asyncio
 async def test_similar_events_require_category_or_close_vector():
     repo = EventRepository(AsyncMock())
     repo.session.execute.return_value = MagicMock()

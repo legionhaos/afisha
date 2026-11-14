@@ -128,6 +128,9 @@ class EventRepository:
                     func.lower(Event.description).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
                     Event.tags.contains([term]),
                 ])
+            # Keep exact/inflected topic matches while allowing title typos to
+            # reach the pg_trgm candidate set.
+            topic_clauses.append(Event.normalized_title.op("%")(query_text.casefold().replace("ё", "е")))
             if topic_clauses:
                 clauses.append(or_(*topic_clauses))
 
