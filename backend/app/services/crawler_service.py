@@ -9,6 +9,7 @@
 """
 import asyncio
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import json
 import re
 from typing import Any
@@ -59,16 +60,41 @@ def detect_bashkortostan_city(address: str | None, venue: str | None) -> tuple[s
         if c_lower in combined:
             return city, True
 
-    # Для региональных доменов ufa.kassir / ufa.kassy дефолтный город — Уфа
-    return "Уфа", True
+    # Региональный домен сам по себе не подтверждает место проведения.
+    return "", False
+
+
+def extract_address(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        fields = ("postalCode", "addressRegion", "addressLocality", "streetAddress")
+        return ", ".join(str(value[key]).strip() for key in fields if value.get(key))
+    return ""
 
 
 def clean_kassir_datetime(dt_str: str | None) -> str | None:
-    """Нормализует дату из Kassir: локальное уфимское время с часовым поясом UTC+5."""
-    if not dt_str:
-        return None
-    cleaned = re.sub(r"([+-]\d{2}:\d{2}|Z)$", "", str(dt_str).strip())
-    return f"{cleaned}+05:00"
+    """Сохраняет указанное источником смещение; наивную дату не домысливает."""
+    return str(dt_str).strip() if dt_str else None
+
+
+def extract_price(offers: Any) -> tuple[int | None, int | None, bool | None]:
+    """Возвращает цену только при наличии полного, однозначного значения."""
+    if not isinstance(offers, dict):
+        return None, None, None
+    low = offers.get("lowPrice")
+    high = offers.get("highPrice")
+    if low is None and high is None:
+        low = high = offers.get("price")
+    if low is None or high is None:
+        return None, None, None
+    try:
+        a, b = Decimal(str(low)), Decimal(str(high))
+        if not a.is_finite() or not b.is_finite() or a < 0 or b < a or a != int(a) or b != int(b):
+            return None, None, None
+        return int(a), int(b), a == b == 0
+    except (ValueError, TypeError, InvalidOperation, OverflowError):
+        return None, None, None
 
 
 class BaseCrawler:
@@ -97,7 +123,7 @@ class KassirCrawler(BaseCrawler):
 
     async def crawl(self, client: httpx.AsyncClient) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
-        seen_urls: set[str] = set()
+        seen_events: set[tuple[str, str, str]] = set()
 
         for cat_slug, default_cat in self.categories:
             cat_url = f"https://ufa.kassir.ru/{cat_slug}"
@@ -128,41 +154,22 @@ class KassirCrawler(BaseCrawler):
                             continue
 
                         event_url = str(item.get("url") or "").strip()
-                        if event_url and event_url in seen_urls:
+                        event_key = (event_url, str(item.get("startDate") or ""), title)
+                        if event_url and event_key in seen_events:
                             continue
                         if event_url:
-                            seen_urls.add(event_url)
+                            seen_events.add(event_key)
 
                         location = item.get("location") or {}
-                        venue_name = str(location.get("name") or "Площадка мероприятия").strip() if isinstance(location, dict) else "Площадка"
-                        address = str(location.get("address") or f"г. Уфа, {venue_name}").strip() if isinstance(location, dict) else venue_name
+                        venue_name = str(location.get("name") or "").strip() if isinstance(location, dict) else ""
+                        address = extract_address(location.get("address")) if isinstance(location, dict) else ""
 
-                        city, is_bash = detect_bashkortostan_city(address, venue_name)
-                        if not is_bash:
-                            continue
+                        city, _ = detect_bashkortostan_city(address, venue_name)
 
                         # Цены
                         offers = item.get("offers") or {}
-                        price_min = 0
-                        price_max = 0
-                        is_free = False
-                        org_link = event_url
-                        if isinstance(offers, dict):
-                            p = offers.get("price")
-                            if p is not None:
-                                try:
-                                    price_min = int(float(p))
-                                    price_max = price_min
-                                except (ValueError, TypeError):
-                                    pass
-                            elif offers.get("lowPrice"):
-                                try:
-                                    price_min = int(float(offers["lowPrice"]))
-                                    price_max = int(float(offers.get("highPrice") or price_min))
-                                except (ValueError, TypeError):
-                                    pass
-                            if offers.get("url"):
-                                org_link = str(offers["url"])
+                        price_min, price_max, is_free = extract_price(offers)
+                        org_link = offers.get("url") if isinstance(offers, dict) else None
 
                         # Дата
                         raw_start = clean_kassir_datetime(item.get("startDate"))
@@ -170,8 +177,10 @@ class KassirCrawler(BaseCrawler):
 
                         # Статус
                         event_status_schema = str(item.get("eventStatus") or "")
-                        if "Cancelled" in event_status_schema or "Rescheduled" in event_status_schema:
+                        if "Cancelled" in event_status_schema:
                             status_val = EventStatus.CANCELLED.value
+                        elif "Rescheduled" in event_status_schema or "Postponed" in event_status_schema:
+                            status_val = EventStatus.DRAFT.value
                         else:
                             status_val = EventStatus.PUBLISHED.value
 
@@ -183,7 +192,7 @@ class KassirCrawler(BaseCrawler):
                         elif isinstance(image_data, str):
                             image_url = image_data
 
-                        desc = str(item.get("description") or title).strip()
+                        desc = str(item.get("description") or "").strip()
 
                         results.append({
                             "title": title,
@@ -196,7 +205,7 @@ class KassirCrawler(BaseCrawler):
                             "price_min": price_min,
                             "price_max": price_max,
                             "is_free": is_free,
-                            "source_url": event_url or cat_url,
+                            "source_url": urljoin(cat_url, event_url) if event_url else "",
                             "org_link": org_link,
                             "description": desc,
                             "image_url": image_url,
@@ -245,25 +254,35 @@ class RusdramCrawler(BaseCrawler):
                     offers = item.get("offers") or {}
                     tickets_url = offers.get("url") if isinstance(offers, dict) else None
 
-                    raw_age = item.get("typicalAgeRange") or "16+"
+                    raw_age = item.get("typicalAgeRange")
+                    price_min, price_max, is_free = extract_price(offers)
+                    location = item.get("location") or {}
+                    venue_name = str(location.get("name") or "").strip() if isinstance(location, dict) else ""
+                    address = extract_address(location.get("address")) if isinstance(location, dict) else ""
+                    city, _ = detect_bashkortostan_city(address, venue_name)
 
                     status_schema = str(item.get("eventStatus") or "")
-                    status_val = EventStatus.CANCELLED.value if "Cancelled" in status_schema else EventStatus.PUBLISHED.value
+                    if "Cancelled" in status_schema:
+                        status_val = EventStatus.CANCELLED.value
+                    elif "Rescheduled" in status_schema or "Postponed" in status_schema:
+                        status_val = EventStatus.DRAFT.value
+                    else:
+                        status_val = EventStatus.PUBLISHED.value
 
                     results.append({
                         "title": title,
                         "category": EventCategory.THEATER.value,
                         "date_start": raw_start,
-                        "city": "Уфа",
-                        "venue": "Государственный академический русский драматический театр Республики Башкортостан",
-                        "address": "г. Уфа, проспект Октября, 79",
-                        "price_min": 400,
-                        "price_max": 1500,
-                        "is_free": False,
+                        "city": city,
+                        "venue": venue_name,
+                        "address": address,
+                        "price_min": price_min,
+                        "price_max": price_max,
+                        "is_free": is_free,
                         "age_limit": raw_age,
-                        "source_url": item.get("url") or self.afisha_url,
-                        "org_link": tickets_url or item.get("url"),
-                        "description": f"Спектакль «{title}» в Государственном академическом русском драматическом театре РБ (г. Уфа).",
+                        "source_url": urljoin(self.afisha_url, str(item.get("url"))) if item.get("url") else "",
+                        "org_link": tickets_url,
+                        "description": str(item.get("description") or "").strip(),
                         "status": status_val,
                         "source_name": "rusdram.ru",
                     })
@@ -348,33 +367,27 @@ class KassyCrawler(BaseCrawler):
                     continue
 
                 location = data.get("location") or {}
-                venue_name = str(location.get("name") or "Площадка мероприятия").strip() if isinstance(location, dict) else "Площадка"
-                address = str(location.get("address") or f"г. Уфа, {venue_name}").strip() if isinstance(location, dict) else venue_name
+                venue_name = str(location.get("name") or "").strip() if isinstance(location, dict) else ""
+                address = extract_address(location.get("address")) if isinstance(location, dict) else ""
 
-                city, is_bash = detect_bashkortostan_city(address, venue_name)
-                if not is_bash:
-                    return None
+                city, _ = detect_bashkortostan_city(address, venue_name)
 
                 offers = data.get("offers") or {}
-                price_min = 0
-                price_max = 0
-                if isinstance(offers, dict):
-                    p_low = offers.get("lowPrice") or offers.get("price")
-                    p_high = offers.get("highPrice") or p_low
-                    if p_low is not None:
-                        try:
-                            price_min = int(float(p_low))
-                            price_max = int(float(p_high or price_min))
-                        except (ValueError, TypeError):
-                            pass
+                price_min, price_max, is_free = extract_price(offers)
 
                 status_schema = str(data.get("eventStatus") or "")
-                if force_cancelled or "Cancelled" in status_schema or "Rescheduled" in status_schema:
+                if force_cancelled or "Cancelled" in status_schema:
                     status_val = EventStatus.CANCELLED.value
+                elif "Rescheduled" in status_schema or "Postponed" in status_schema:
+                    status_val = EventStatus.DRAFT.value
                 else:
                     status_val = EventStatus.PUBLISHED.value
 
-                category = EventCategory.THEATER.value if data.get("@type") == "TheaterEvent" else EventCategory.CONCERT.value
+                category = {
+                    "TheaterEvent": EventCategory.THEATER.value,
+                    "MusicEvent": EventCategory.CONCERT.value,
+                    "Festival": EventCategory.FESTIVAL.value,
+                }.get(data.get("@type"), EventCategory.OTHER.value)
 
                 return {
                     "title": title,
@@ -386,10 +399,10 @@ class KassyCrawler(BaseCrawler):
                     "address": address,
                     "price_min": price_min,
                     "price_max": price_max,
-                    "is_free": price_min == 0 and "свободн" in title.lower(),
+                    "is_free": is_free,
                     "source_url": url,
                     "org_link": offers.get("url") if isinstance(offers, dict) else url,
-                    "description": str(data.get("description") or title).strip(),
+                    "description": str(data.get("description") or "").strip(),
                     "status": status_val,
                     "source_name": "kassy.ru",
                 }
@@ -434,13 +447,14 @@ class CrawlerService:
         limit_per_source: int | None = None,
     ) -> list[dict[str, Any]]:
         """Запускает сбор из всех зарегистрированных источников с нормализацией."""
+        if limit_per_source is not None and limit_per_source < 1:
+            raise ValueError("limit_per_source должен быть положительным")
         all_raw_events: list[dict[str, Any]] = []
 
         async with httpx.AsyncClient(
             headers=DEFAULT_HEADERS,
             follow_redirects=True,
             timeout=15.0,
-            verify=False,
         ) as client:
             for crawler in self.crawlers:
                 try:
@@ -458,14 +472,14 @@ class CrawlerService:
                     src_url = ev.get("source_url")
                     is_alive = await self.verify_url(client, src_url)
                     ev["url_verified"] = is_alive
-                    if not is_alive:
-                        # Снижаем уверенность и статус при неработающей ссылке (ТЗ 6.5)
+                    if not is_alive and ev.get("status") != EventStatus.CANCELLED.value:
+                        # Недоступная ссылка не отменяет уже известную отмену события.
                         ev["status"] = EventStatus.DRAFT.value
 
-        # Фильтрация и дедупликация по source_url
-        unique_events: dict[str, dict[str, Any]] = {}
+        # Одна страница может содержать несколько сеансов одного мероприятия.
+        unique_events: dict[tuple[str, str, str], dict[str, Any]] = {}
         for ev in all_raw_events:
-            url_key = ev.get("source_url") or ev.get("title")
+            url_key = (str(ev.get("source_url") or ""), str(ev.get("date_start") or ""), str(ev.get("title") or ""))
             if url_key not in unique_events:
                 unique_events[url_key] = ev
 
@@ -484,7 +498,8 @@ class CrawlerService:
 
         # Опциональное сохранение в seed_events.json для офлайн-сидинга
         if save_seed_path:
-            with open(save_seed_path, "w", encoding="utf-8") as f:
+            # An export must never silently replace an existing dataset.
+            with open(save_seed_path, "x", encoding="utf-8") as f:
                 json.dump(events, f, ensure_ascii=False, indent=2)
             logger.info("saved_seed_file", path=save_seed_path, count=len(events))
 

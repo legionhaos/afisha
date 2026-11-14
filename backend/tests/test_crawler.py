@@ -10,6 +10,8 @@ from app.services.crawler_service import (
     RusdramCrawler,
     clean_kassir_datetime,
     detect_bashkortostan_city,
+    extract_address,
+    extract_price,
 )
 
 
@@ -38,15 +40,24 @@ def test_detect_bashkortostan_city():
     assert is_bash is False
 
 
+def test_missing_source_facts_are_not_fabricated():
+    assert detect_bashkortostan_city(None, None) == ("", False)
+    assert extract_price({}) == (None, None, None)
+    assert extract_price({"lowPrice": "300"}) == (None, None, None)
+    assert extract_price({"price": "0"}) == (0, 0, True)
+    assert extract_price({"price": "500.5"}) == (None, None, None)
+    assert extract_address({"addressLocality": "Уфа", "streetAddress": "Ленина, 1"}) == "Уфа, Ленина, 1"
+
+
 def test_clean_kassir_datetime():
-    # Kassir Nuxt сериализует уфимское время со смещением +00:00 или Z
+    # Явное смещение источника нельзя заменять без подтверждения.
     raw_date = "2026-11-28T19:00:00+00:00"
     cleaned = clean_kassir_datetime(raw_date)
-    assert cleaned == "2026-11-28T19:00:00+05:00"
+    assert cleaned == "2026-11-28T19:00:00+00:00"
 
     raw_date_z = "2026-12-05T18:30:00Z"
     cleaned_z = clean_kassir_datetime(raw_date_z)
-    assert cleaned_z == "2026-12-05T18:30:00+05:00"
+    assert cleaned_z == "2026-12-05T18:30:00Z"
 
     assert clean_kassir_datetime(None) is None
 
@@ -104,7 +115,7 @@ async def test_kassir_crawler_parses_json_ld():
     assert ev["venue"] == "Уфа-Арена"
     assert ev["price_min"] == 3500
     assert ev["status"] == EventStatus.PUBLISHED.value
-    assert ev["date_start"] == "2026-11-20T19:00:00+05:00"
+    assert ev["date_start"] == "2026-11-20T19:00:00+00:00"
 
 
 @pytest.mark.asyncio
@@ -146,9 +157,11 @@ async def test_rusdram_crawler_parses_theater_events():
     ev = results[0]
     assert ev["title"] == "Маскарад"
     assert ev["category"] == EventCategory.THEATER.value
-    assert ev["city"] == "Уфа"
+    assert ev["city"] == ""
     assert ev["age_limit"] == "16+"
-    assert ev["venue"] == "Государственный академический русский драматический театр Республики Башкортостан"
+    assert ev["venue"] == ""
+    assert ev["price_min"] is None and ev["price_max"] is None
+    assert ev["description"] == ""
     assert ev["status"] == EventStatus.PUBLISHED.value
 
 
@@ -191,6 +204,23 @@ async def test_kassy_crawler_marks_cancellations():
     cancelled_ev = next(r for r in results if r["title"] == "Отмененный спектакль")
     assert cancelled_ev["status"] == EventStatus.CANCELLED.value
     assert cancelled_ev["city"] == "Уфа"
+
+
+@pytest.mark.asyncio
+async def test_crawl_keeps_multiple_showtimes_and_cancelled_status():
+    crawler_service = CrawlerService(import_service=MagicMock())
+    source = MagicMock()
+    source.name = "fixture"
+    source.crawl = AsyncMock(return_value=[
+        {"title": "Тест", "source_url": "https://example.org/a", "date_start": "2027-01-01", "status": "cancelled"},
+        {"title": "Тест", "source_url": "https://example.org/a", "date_start": "2027-01-02", "status": "published"},
+    ])
+    crawler_service.crawlers = [source]
+    crawler_service.verify_url = AsyncMock(return_value=False)
+    result = await crawler_service.crawl_all(verify_urls=True)
+    assert len(result) == 2
+    assert result[0]["status"] == "cancelled"
+    assert result[1]["status"] == "draft"
 
 
 @pytest.mark.asyncio
