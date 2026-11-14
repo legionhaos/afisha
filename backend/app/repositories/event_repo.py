@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -114,7 +115,29 @@ class EventRepository:
         """
         clauses = self._build_base_filters(filters)
 
-        # 1. Total count query
+        query_text = filters.query_text.strip() if filters.query_text else None
+        if query_text:
+            # A lexical candidate gate keeps semantic ranking from returning events
+            # that do not contain the requested topic. FTS handles Russian inflection.
+            terms = [term.strip().lower() for term in query_text.split('|') if term.strip()]
+            topic_clauses = []
+            for term in terms:
+                ts_query = func.plainto_tsquery('russian', term)
+                if term in {'хоккей', 'hockey'}:
+                    topic_clauses.extend([
+                        func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
+                        func.lower(Event.description).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
+                    ])
+                topic_clauses.extend([
+                    Event.tsv.op('@@')(ts_query),
+                    func.lower(Event.title).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
+                    func.lower(Event.description).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
+                    Event.tags.contains([term]),
+                ])
+            if topic_clauses:
+                clauses.append(or_(*topic_clauses))
+
+        # Count and page must use the same filtered candidate set.
         count_stmt = select(func.count(Event.id)).where(and_(*clauses))
         total_res = await self.session.execute(count_stmt)
         total = total_res.scalar() or 0

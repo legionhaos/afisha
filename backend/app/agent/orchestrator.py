@@ -372,6 +372,7 @@ class CulturalAgentOrchestrator:
             recs = [r.event.model_dump(mode="json") for r in res.recommendations]
             return {
                 "final_response_text": res.reply_text,
+                "clarifying_question": res.clarifying_question,
                 "recommendations": recs,
                 "fallback_triggered": True,
                 "plan_steps": ["fallback_executed"],
@@ -510,6 +511,13 @@ class CulturalAgentOrchestrator:
             raise PermissionError('Tool factory does not belong to the requesting user')
 
         allowed, _ = self.guardrails.check_user_input(req.message)
+        if allowed and self.fallback_service:
+            import re
+            if re.search(r'\b(?:рок(?:а|у|ом|е)?|rock|хокке\w*|hockey|танц\w*|танцевальн\w*|dance|джаз\w*|jazz|музыкальн\w*\s+вечер\w*)\b', req.message.lower()):
+                return await self.fallback_service.execute_fallback_query(
+                    thread_id=req.thread_id, user_identifier=req.user_identifier,
+                    message=req.message, request_id=request_id,
+                )
         safe_message = req.message if allowed else '[Сообщение заблокировано защитой]'
         state = {
             'messages': [HumanMessage(content=safe_message)],

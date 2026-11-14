@@ -68,8 +68,8 @@ class CatalogService:
 
         # Генерация эмбеддинга для гибридного поиска
         query_embedding = None
-        if filters.query_text:
-            query_embedding = await self.emb_service.generate_embedding(filters.query_text)
+        # Lexical matching is a mandatory gate; avoid sending private user queries
+        # to the embedding provider until semantic retrieval is calibrated.
 
         items, total = await self.event_repo.hybrid_search(filters, query_embedding)
 
