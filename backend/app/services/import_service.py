@@ -211,6 +211,8 @@ class ImportService:
             if text_price is None:
                 raise ValueError("Цена не указана")
             raw_price_text = str(text_price).strip().casefold()
+            # Normalize digit groups without merging separate price values.
+            raw_price_text = re.sub(r"(?<=\d)[   ](?=\d{3}(?:\D|$))", "", raw_price_text)
             if re.match(r"^-\s*\d", raw_price_text):
                 raise ValueError("Цена не может быть отрицательной")
             numbers = re.findall(r"\d+", raw_price_text)
@@ -220,7 +222,7 @@ class ImportService:
                 raise ValueError("Указана только одна граница цены")
             if len(numbers) == 2 and int(numbers[0]) > int(numbers[1]):
                 raise ValueError("Минимальная цена больше максимальной")
-            price_min, price_max, is_free = self.norm_service.parse_price_text(text_price)
+            price_min, price_max, is_free = self.norm_service.parse_price_text(raw_price_text)
             if numbers and is_free and any(int(number) != 0 for number in numbers):
                 raise ValueError("Цена противоречит бесплатному входу")
             if explicitly_paid and is_free:

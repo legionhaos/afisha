@@ -122,6 +122,21 @@ async def test_zero_coordinates_are_preserved():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("price,expected", [
+    ("1 500 руб", (1500, 1500)),
+    ("от 1 500 до 2 000 ₽", (1500, 2000)),
+    ("1 500–2 000 ₽", (1500, 2000)),
+])
+async def test_formatted_prices_keep_thousands(price, expected):
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(price=price), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert (data["price_min"], data["price_max"]) == expected
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("price", [0, "0", "0 рублей"])
 async def test_zero_price_remains_free(price):
     svc = service()
