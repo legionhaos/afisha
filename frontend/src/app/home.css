@@ -22,3 +22,8 @@
 .home-header nav{align-items:center}
 .home-header nav>a{display:inline-flex;align-items:center;min-height:42px;line-height:1.2}
 @media(max-width:600px){.home-header{align-items:center}.home-header nav>a{min-height:38px}}
+
+/* The selected bird mark uses the existing green palette. */
+.home-brand{align-items:center;gap:8px}
+.home-brand-mark{width:34px;height:34px;flex:none;color:#315c44}
+@media(max-width:600px){.home-brand{gap:5px}.home-brand-mark{width:28px;height:28px}}

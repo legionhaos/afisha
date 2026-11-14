@@ -1,5 +1,6 @@
 import re
-from datetime import datetime
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -22,6 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.models.enums import EventCategory, EventStatus, ModerationReason, SourceType
 from app.models.event import Event, EventSource
 from app.schemas.event import EventSearchFilterDTO
+YEKT_TZ = ZoneInfo("Asia/Yekaterinburg")
 
 
 class EventRepository:
@@ -84,6 +86,9 @@ class EventRepository:
             clauses.append(Event.category == filters.category)
         if filters.date_from and exclude != "date":
             clauses.append(Event.date_start >= filters.date_from)
+        elif not getattr(filters, "include_past", False) and exclude != "date":
+            today_start = datetime.combine(datetime.now(YEKT_TZ).date(), time.min, tzinfo=YEKT_TZ)
+            clauses.append(Event.date_start >= today_start)
         if filters.date_to and exclude != "date":
             clauses.append(Event.date_start <= filters.date_to)
         if filters.price_max is not None and exclude != "price":
@@ -112,6 +117,7 @@ class EventRepository:
                 topic_clauses.extend([
                     func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)"),
                     func.lower(Event.description).op("~*")(r"(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)"),
+                    Event.tags.contains(["хоккей"]),
                 ])
             topic_clauses.extend([
                 Event.tsv.op("@@")(ts_query),
@@ -120,7 +126,11 @@ class EventRepository:
                 Event.tags.contains([term]),
             ])
             if term in {"кино", "фильм", "фильмы", "кинотеатр"}:
-                topic_clauses.extend([Event.category == EventCategory.CINEMA, Event.tags.contains(["кино"])])
+                topic_clauses.extend([
+                    Event.category == EventCategory.CINEMA,
+                    func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])(кино|фильм)[[:alpha:]]*([^[:alnum:]]|$)"),
+                    Event.tags.contains(["кино"]),
+                ])
             if term in {"футбол", "football"}:
                 topic_clauses.extend([
                     func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])футбол[[:alpha:]]*([^[:alnum:]]|$)"),

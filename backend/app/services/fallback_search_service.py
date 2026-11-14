@@ -176,7 +176,8 @@ class FallbackSearchService:
         await self.audit_repo.save_agent_trace({
             "id": trace_id,
             "request_id": request_id,
-            "thread_id": thread_id,
+            "thread_id": f"{user_identifier}::{thread_id}"[:128],
+            "user_identifier": user_identifier,
             "user_query": message,
             "plan_steps": ["fallback_deterministic_parse", "catalog_search"],
             "tool_calls": [{"tool": "deterministic_search", "args": filters.model_dump(mode="json")}],
@@ -195,6 +196,6 @@ class FallbackSearchService:
             recommendations=recommendations,
             is_fallback_mode=True,
             fallback_notice="Работает упрощённый поиск без ИИ.",
-            clarifying_question=('В каком городе ищем события?' if needs_city and not unsupported_sport else None),
+            clarifying_question=('В каком городе ищем события?' if needs_city else None),
             data_grounded_badge="Ответ построен исключительно по проверенным данным сервиса",
         )

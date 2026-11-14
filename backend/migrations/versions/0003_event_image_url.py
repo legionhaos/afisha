@@ -14,8 +14,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("events", sa.Column("image_url", sa.Text(), nullable=True))
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    columns = [c["name"] for c in insp.get_columns("events")]
+    if "image_url" not in columns:
+        op.add_column("events", sa.Column("image_url", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("events", "image_url")
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    columns = [c["name"] for c in insp.get_columns("events")]
+    if "image_url" in columns:
+        op.drop_column("events", "image_url")

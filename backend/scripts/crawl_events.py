@@ -66,6 +66,12 @@ async def main():
         limit_per_source=args.limit,
     )
 
+    if not events:
+        print("\n❌ Ошибка: не удалось собрать ни одного мероприятия (все источники вернули 0 или недоступны)!")
+        if not args.dry_run:
+            sys.exit(1)
+        return
+
     print(f"\n✅ Сбор завершен! Найдено уникальных мероприятий: {len(events)}")
 
     # Подсчет статистики

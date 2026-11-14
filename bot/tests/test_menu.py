@@ -34,6 +34,8 @@ async def test_start_has_navigation(state):
     assert 'Привет!' in call.args[0]
     assert 'menu:catalog' in str(call.kwargs['reply_markup'])
     assert 'menu:subscriptions' in str(call.kwargs['reply_markup'])
+    assert 'Mini App' not in call.args[0]
+    assert all(button.web_app is None for row in call.kwargs['reply_markup'].inline_keyboard for button in row)
 
 
 @pytest.mark.asyncio
@@ -154,6 +156,56 @@ async def test_fallback_with_city_does_not_ask_city_again(state):
     await send_chat(message, state, api, {'message': 'концерты в уфе'})
     api.dictionaries.assert_not_awaited()
     assert 'Ничего не найдено' in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_catalog_back_navigation_preserves_filters_and_legacy_city_indices(state):
+    from app.handlers.commands import show_city, select_city, select_category, select_date, select_price, navigation_callback
+
+    message = make_message()
+    api = SimpleNamespace(
+        dictionaries=AsyncMock(side_effect=[{'cities': [{'name': 'Салават'}, {'name': 'Уфа'}]}, {'categories': [{'title_ru': 'Концерты', 'category': 'concert'}]}]),
+        events=AsyncMock(return_value={'items': [], 'empty_explanation': {}}),
+    )
+    def callback(data):
+        return SimpleNamespace(message=message, data=data, answer=AsyncMock(), from_user=SimpleNamespace(id=2))
+
+    await show_city(message, state, api, False)
+    buttons = message.answer.await_args.kwargs['reply_markup'].inline_keyboard
+    assert buttons[0][0].callback_data == 'city:1'
+    await select_city(callback('city:1'), state, api)
+    await select_category(callback('category:0'), state)
+    await select_date(callback('date:weekend'), state)
+    await select_price(callback('price:free'), state, api)
+    assert 'nav:price' in str(message.answer.await_args.kwargs['reply_markup'])
+    await navigation_callback(callback('nav:price'), state, api)
+    await navigation_callback(callback('nav:date'), state, api)
+    await select_date(callback('date:weekend'), state)
+    await select_price(callback('price:500'), state, api)
+    assert api.events.await_args.args[0] == {'city': 'Уфа', 'category': 'concert', 'date_preset': 'weekend', 'price_max': 500, 'page_size': 5, 'page': 1}
+
+
+@pytest.mark.asyncio
+async def test_old_result_buttons_do_not_interrupt_other_flow(state):
+    from app.handlers.commands import page_callback, navigation_callback
+    await state.set_state(Flow.assistant)
+    await state.update_data(filters={'city': 'Уфа'}, page=1)
+    message = make_message()
+    api = SimpleNamespace(events=AsyncMock())
+    callback = SimpleNamespace(message=message, data='page:1', answer=AsyncMock())
+    await page_callback(callback, state, api)
+    callback.data = 'nav:price'
+    await navigation_callback(callback, state, api)
+    api.events.assert_not_awaited()
+    assert await state.get_state() == Flow.assistant.state
+
+
+@pytest.mark.asyncio
+async def test_subscriptions_notice(state):
+    message = make_message()
+    await menu_callback(make_callback(message, 'subscriptions'), state, SimpleNamespace())
+    assert 'рассылка уведомлений пока не работает' in message.answer.await_args.args[0].lower()
+
 
 
 @pytest.mark.asyncio
