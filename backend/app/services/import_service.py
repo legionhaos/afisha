@@ -356,12 +356,10 @@ class ImportService:
         event_dict_payload["dispute_reason"] = dispute_reason
 
         # Статус публикации (с корректной фиксацией отмененных мероприятий)
-        raw_status = str(raw_row.get("status") or "").strip().lower()
-        if (
-            raw_status in ("cancelled", "отменено", "отменен", "canceled")
-            or "отменен" in raw_title_str.lower()
-            or "отменено" in raw_title_str.lower()
-        ):
+        raw_status = str(raw_row.get("status") or "").strip().casefold().replace("ё", "е")
+        title_status = raw_title_str.casefold().replace("ё", "е")
+        cancelled_marker = re.search(r"[\(\[]\s*(?:отменен|отменено|отменена)\s*[\)\]]", title_status)
+        if raw_status in ("cancelled", "отменено", "отменен", "отменена", "canceled") or cancelled_marker:
             event_dict_payload["status"] = EventStatus.CANCELLED
         elif is_disputed or raw_status == EventStatus.DRAFT.value:
             event_dict_payload["status"] = EventStatus.DRAFT

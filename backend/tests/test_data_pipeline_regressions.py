@@ -89,6 +89,19 @@ async def test_retry_of_rejected_source_is_not_reported_as_updated():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [
+    {"status": "отменён"}, {"status": "отменена"}, {"title": "Тестовый концерт [ОТМЕНЁН]"},
+])
+async def test_cancelled_markers_include_yo_and_gender(extra):
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(**extra), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert data["status"] == EventStatus.CANCELLED
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("extra", [{"status": "draft"}, {"url_verified": False}])
 async def test_crawler_unverified_records_remain_drafts(extra):
     svc = service()
