@@ -108,7 +108,7 @@ async def main():
     # Сохранение в seed_events.json
     if args.save_seed and not args.dry_run:
         seed_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(seed_path, "w", encoding="utf-8") as f:
+        with open(seed_path, "x", encoding="utf-8") as f:
             json.dump(events, f, ensure_ascii=False, indent=2)
         print(f"\n💾 Данные сохранены в {seed_path} ({len(events)} событий)")
 
@@ -140,23 +140,22 @@ async def main():
                 emb_service=emb_service,
             )
 
-            crawler_service.import_service = import_service
-
-            report = await crawler_service.crawl_and_import(
+            report = await import_service.import_file(
+                file_bytes=json.dumps(events, ensure_ascii=False).encode("utf-8"),
+                filename="crawler_feed.json",
                 actor_id="cli_crawler",
                 request_id="cli_crawl_run",
-                verify_urls=args.verify_urls,
             )
 
             await session.commit()
 
             print("\n🏁 Результаты импорта в базу данных:")
-            print(f"  • Всего обработано: {report['crawled_total']}")
-            print(f"  • Добавлено новых: {report['added_count']}")
-            print(f"  • Объединено дубликатов: {report['merged_count']}")
-            print(f"  • Обновлено: {report['updated_count']}")
-            print(f"  • Отправлено на модерацию: {report['flagged_for_moderation']}")
-            print(f"  • Отклонено с ошибкой: {report['rejected_count']}")
+            print(f"  • Всего обработано: {report.total_received}")
+            print(f"  • Добавлено новых: {report.added_count}")
+            print(f"  • Объединено дубликатов: {report.deduplicated_merged_count}")
+            print(f"  • Обновлено: {report.updated_count}")
+            print(f"  • Отправлено на модерацию: {report.flagged_for_moderation_count}")
+            print(f"  • Отклонено с ошибкой: {report.rejected_count}")
 
         await engine.dispose()
 
