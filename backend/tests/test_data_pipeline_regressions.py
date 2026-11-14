@@ -137,6 +137,17 @@ def test_deduplication_preserves_existing_organizer_link():
     assert merged["org_link"] == "https://example.org/original"
 
 
+@pytest.mark.parametrize("raw,title,description,expected", [
+    ("theater", "Музыкальная комедия", "Музыка и песни", EventCategory.THEATER),
+    ("concert", "Концерт", "В театре", EventCategory.CONCERT),
+    ("выставка", "Концерт в музее", "Музыка", EventCategory.EXHIBITION),
+    ("festival", "Фестиваль", "Концерты", EventCategory.FESTIVAL),
+])
+def test_explicit_category_takes_precedence(raw, title, description, expected):
+    category, _ = NormalizationService().normalize_category(raw, title, description)
+    assert category == expected
+
+
 def test_age_is_not_inferred_from_arbitrary_description_numbers():
     norm = NormalizationService()
     assert norm.normalize_age_limit(None, "Концерт начинается в 19:00, билеты от 500 рублей") == 0

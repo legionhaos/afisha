@@ -186,6 +186,23 @@ class NormalizationService:
         if any(w in combined for w in ["классическ", "симфони"]):
             tags.append("классика")
 
+        if raw_category:
+            try:
+                return EventCategory(raw_category.strip().casefold()), tags
+            except ValueError:
+                declared = raw_category.casefold()
+                categories = {
+                    EventCategory.CONCERT: ("концерт", "музык"),
+                    EventCategory.THEATER: ("театр", "спектакл", "балет", "опера"),
+                    EventCategory.EXHIBITION: ("выставк", "экспозиц"),
+                    EventCategory.FESTIVAL: ("фестивал",),
+                    EventCategory.CINEMA: ("кино", "фильм"),
+                    EventCategory.EXCURSION: ("экскурси",),
+                }
+                for category, terms in categories.items():
+                    if any(term in declared for term in terms):
+                        return category, tags
+
         if any(w in combined for w in ["концерт", "оркестр", "филармон", "музык", "песн", "хор"]):
             return EventCategory.CONCERT, tags
         elif any(w in combined for w in ["спектакл", "театр", "драм", "комеди", "балет", "опер"]):
