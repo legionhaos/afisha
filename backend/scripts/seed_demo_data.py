@@ -54,7 +54,10 @@ async def seed():
     if not isinstance(seed_events, list) or any(not isinstance(event, dict) for event in seed_events):
         raise ValueError("Файл seed_events.json должен содержать список мероприятий")
     for event in seed_events:
-        if event.get("status") != "cancelled":
+        # Keep this quarantine marker in raw_payload so replay cannot publish
+        # unverified rows after normalizing their original status.
+        event["url_verified"] = False
+        if str(event.get("status") or "").strip().casefold() not in ("cancelled", "canceled"):
             event["status"] = "draft"
     file_bytes = json.dumps(seed_events, ensure_ascii=False).encode("utf-8")
 
