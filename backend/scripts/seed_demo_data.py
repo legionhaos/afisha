@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Скрипт начального наполнения (сидинга) базы данных реальными мероприятиями Башкортостана.
+Загрузка неподтверждённого набора мероприятий для проверки модератором.
 Запуск: python scripts/seed_demo_data.py
 Или: make seed
 """
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -46,6 +47,16 @@ async def seed():
     print(f"📦 Чтение данных из {seed_file.name}...")
     with open(seed_file, "rb") as f:
         file_bytes = f.read()
+
+    # A historical seed file may contain generated schedules. It must never
+    # silently turn unverified rows into public events.
+    seed_events = json.loads(file_bytes)
+    if not isinstance(seed_events, list) or any(not isinstance(event, dict) for event in seed_events):
+        raise ValueError("Файл seed_events.json должен содержать список мероприятий")
+    for event in seed_events:
+        if event.get("status") != "cancelled":
+            event["status"] = "draft"
+    file_bytes = json.dumps(seed_events, ensure_ascii=False).encode("utf-8")
 
     async with session_maker() as session:
         # Репозитории
@@ -101,7 +112,7 @@ async def seed():
                 print(f"  - Строка {err.row_index} ({err.raw_title}): {err.reason}")
 
         print("=" * 60)
-        print("🎉 База данных успешно наполнена реальными событиями!")
+        print("Готово: неотменённые записи загружены как черновики для проверки.")
 
     await engine.dispose()
 
