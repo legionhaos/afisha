@@ -1,9 +1,11 @@
+import html
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
 def format_card(event: dict[str, Any]) -> str:
-    date = datetime.fromisoformat(event['date_start'].replace('Z', '+00:00'))
+    raw_date = event.get('date_start', '')
+    date = datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
     date_text = date.astimezone(timezone(timedelta(hours=5))).strftime('%d.%m.%Y %H:%M')
     if event.get('is_free'):
         price = 'Бесплатно'
@@ -17,13 +19,31 @@ def format_card(event: dict[str, Any]) -> str:
         price = f"От {event['price_min']} ₽"
     else:
         price = f"{event['price_min']}–{event['price_max']} ₽"
-    lines = [event['title'], f"{date_text} (UTC+5)", f"{event['city']}, {event['venue']}", event['address'], f"{price} · {event.get('age_limit', 0)}+"]
+
+    title = html.escape(str(event.get('title', 'Без названия')))
+    city = html.escape(str(event.get('city', '')))
+    venue = html.escape(str(event.get('venue', '')))
+    address = html.escape(str(event.get('address', '')))
+    age = event.get('age_limit', 0)
+
+    lines = [
+        f"<b>🎭 {title}</b>",
+        f"📅 <b>Дата:</b> {date_text} (UTC+5)",
+        f"📍 <b>Место:</b> {city}, {venue}",
+        f"🏢 <b>Адрес:</b> {address}",
+        f"💳 <b>Билеты:</b> {price} · {age}+",
+    ]
     if event.get('status') == 'cancelled':
-        lines.append(event.get('cancelled_badge') or 'Мероприятие отменено')
+        badge = html.escape(event.get('cancelled_badge') or 'Мероприятие отменено')
+        lines.append(f"⚠️ <b>{badge}</b>")
     if event.get('description'):
-        lines.append(event['description'][:1200])
+        clean_desc = html.escape(str(event['description'])[:1200])
+        lines.append(f"<blockquote>{clean_desc}</blockquote>")
     if event.get('source_url') and event['source_url'] != 'https://example.org/demo':
-        lines.append('Источник: ' + event['source_url'])
+        src = html.escape(event['source_url'])
+        lines.append(f'🔗 Источник: <a href="{src}">{src}</a>')
     if event.get('org_link'):
-        lines.append('Организатор: ' + event['org_link'])
+        org = html.escape(event['org_link'])
+        lines.append(f'🎟 Организатор: <a href="{org}">{org}</a>')
     return '\n'.join(lines)[:4000]
+
