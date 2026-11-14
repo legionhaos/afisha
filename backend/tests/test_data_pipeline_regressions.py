@@ -194,6 +194,22 @@ async def test_text_search_candidate_gate_includes_trigram_matching():
 
 
 @pytest.mark.asyncio
+async def test_diagnostics_uses_same_topic_gate_as_search():
+    session = AsyncMock()
+    row = MagicMock()
+    row._mapping = {"price": 0}
+    result = MagicMock()
+    result.one.return_value = row
+    session.execute.return_value = result
+    await EventRepository(session).diagnose_blocking_constraints(
+        EventSearchFilterDTO(query_text="хоккей", price_max=100)
+    )
+    sql = str(session.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "plainto_tsquery" in sql and "websearch_to_tsquery" in sql
+    assert "events.normalized_title %%" in sql
+
+
+@pytest.mark.asyncio
 async def test_similar_events_require_category_or_close_vector():
     repo = EventRepository(AsyncMock())
     repo.session.execute.return_value = MagicMock()

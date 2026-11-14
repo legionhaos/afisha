@@ -101,6 +101,26 @@ class EventRepository:
 
         return clauses
 
+    @staticmethod
+    def _topic_filter(query: str) -> Any:
+        terms = [term.strip().lower() for term in query.split("|") if term.strip()]
+        topic_clauses = []
+        for term in terms:
+            ts_query = func.plainto_tsquery("russian", term)
+            if term in {"хоккей", "hockey"}:
+                topic_clauses.extend([
+                    func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)"),
+                    func.lower(Event.description).op("~*")(r"(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)"),
+                ])
+            topic_clauses.extend([
+                Event.tsv.op("@@")(ts_query),
+                func.lower(Event.title).op("~*")(rf"(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)"),
+                func.lower(Event.description).op("~*")(rf"(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)"),
+                Event.tags.contains([term]),
+            ])
+        topic_clauses.append(Event.normalized_title.op("%")(query.casefold().replace("ё", "е")))
+        return or_(*topic_clauses)
+
     async def hybrid_search(
         self,
         filters: EventSearchFilterDTO,
@@ -111,28 +131,7 @@ class EventRepository:
 
         query_text = filters.query_text.strip() if filters.query_text else None
         if query_text:
-            # A lexical candidate gate keeps semantic ranking from returning events
-            # that do not contain the requested topic. FTS handles Russian inflection.
-            terms = [term.strip().lower() for term in query_text.split('|') if term.strip()]
-            topic_clauses = []
-            for term in terms:
-                ts_query = func.plainto_tsquery('russian', term)
-                if term in {'хоккей', 'hockey'}:
-                    topic_clauses.extend([
-                        func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
-                        func.lower(Event.description).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
-                    ])
-                topic_clauses.extend([
-                    Event.tsv.op('@@')(ts_query),
-                    func.lower(Event.title).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
-                    func.lower(Event.description).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
-                    Event.tags.contains([term]),
-                ])
-            # Keep exact/inflected topic matches while allowing title typos to
-            # reach the pg_trgm candidate set.
-            topic_clauses.append(Event.normalized_title.op("%")(query_text.casefold().replace("ё", "е")))
-            if topic_clauses:
-                clauses.append(or_(*topic_clauses))
+            clauses.append(self._topic_filter(query_text))
 
         query = filters.query_text.strip() if filters.query_text else ""
         text_ranked = vector_ranked = None
@@ -196,6 +195,9 @@ class EventRepository:
             if filters.query_text and filters.query_text.strip():
                 query = filters.query_text.strip()
                 normalized = query.casefold().replace("ё", "е")
+                clauses.append(self._topic_filter(query))
+                # Without an embedding, hybrid_search additionally requires a
+                # full-text or trigram match in its text ranking CTE.
                 clauses.append(or_(
                     Event.tsv.op("@@")(func.websearch_to_tsquery("russian", query)),
                     Event.normalized_title.op("%")(normalized),
