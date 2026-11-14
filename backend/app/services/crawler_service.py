@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 import json
 import re
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import structlog
@@ -427,18 +427,23 @@ class CrawlerService:
             KassyCrawler(),
         ]
 
-    async def verify_url(self, client: httpx.AsyncClient, url: str) -> bool:
-        """Проверка доступности ссылки на источник (требование 6.5 ТЗ)."""
-        if not url or not url.startswith("http"):
+    async def verify_url(self, client: httpx.AsyncClient, url: str | None) -> bool:
+        """Проверяет доступность URL известных источников, не следуя редиректам."""
+        if not isinstance(url, str):
             return False
         try:
-            r = await client.head(url, timeout=5.0)
-            if 200 <= r.status_code < 400:
+            parsed = urlsplit(url)
+            if (parsed.scheme != "https" or parsed.hostname not in {"ufa.kassir.ru", "ufa.kassy.ru", "rusdram.ru", "www.rusdram.ru"}
+                    or parsed.username is not None or parsed.password is not None or parsed.port not in (None, 443)):
+                return False
+            response = await client.head(url, timeout=5.0, follow_redirects=False)
+            if 200 <= response.status_code < 300:
                 return True
-            # Некоторые серверы не поддерживают HEAD — fallback на GET
-            r_get = await client.get(url, timeout=5.0)
-            return 200 <= r_get.status_code < 400
-        except Exception:
+            if response.status_code not in (405, 501):
+                return False
+            response = await client.get(url, timeout=5.0, follow_redirects=False)
+            return 200 <= response.status_code < 300
+        except (ValueError, httpx.HTTPError):
             return False
 
     async def crawl_all(

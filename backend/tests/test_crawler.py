@@ -239,3 +239,18 @@ async def test_crawler_service_verify_url():
     mock_client.head.return_value = mock_resp_404
     mock_client.get.return_value = mock_resp_404
     assert await crawler_service.verify_url(mock_client, "https://ufa.kassir.ru/broken") is False
+
+    mock_client.reset_mock()
+    for url in ("http://ufa.kassir.ru/test", "https://127.0.0.1/test",
+                "https://ufa.kassir.ru.evil.example/", "https://user@ufa.kassir.ru/", "https://ufa.kassir.ru:8443/"):
+        assert await crawler_service.verify_url(mock_client, url) is False
+    mock_client.head.assert_not_awaited()
+
+    mock_client.head.return_value = MagicMock(status_code=302)
+    assert await crawler_service.verify_url(mock_client, "https://ufa.kassir.ru/redirect") is False
+    mock_client.get.assert_not_awaited()
+
+    mock_client.head.return_value = MagicMock(status_code=405)
+    mock_client.get.return_value = MagicMock(status_code=200)
+    assert await crawler_service.verify_url(mock_client, "https://ufa.kassir.ru/no-head") is True
+    assert mock_client.get.await_args.kwargs["follow_redirects"] is False
