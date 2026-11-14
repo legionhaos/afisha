@@ -47,6 +47,7 @@ class EventCardDTO(BaseModel):
     age_limit: int = Field(default=0, ge=0, le=18, description="Возрастной ценз: 0, 6, 12, 16, 18")
     language: str | None = Field(default=None, description="Язык проведения (русский, башкирский и др.)")
     org_link: str | None = Field(default=None, description="Ссылка организатора на покупку билетов")
+    image_url: str | None = Field(default=None, description="URL афиши или постера для превью")
     source_url: str = Field(..., description="Основная ссылка на источник")
     status: EventStatus = Field(default=EventStatus.PUBLISHED, description="Статус публикации")
     cancelled_badge: str | None = Field(

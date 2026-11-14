@@ -89,7 +89,7 @@ class FallbackSearchService:
             filters.is_free = True
         else:
             price_match = re.search(
-                r"(?:до|дешевле|менее|не дороже)\s*(\d{1,3}(?:[  ]\d{3})+|\d+)\s*(?:руб(?:лей|ля|ль)?\.?|р\.?(?!\w)|₽)",
+                r"(?:до|дешевле|менее|не дороже|за|в пределах)\s*(\d{1,3}(?:[  ]\d{3})+|\d+)\s*(?:руб(?:лей|ля|ль)?\.?|р\.?(?!\w)|₽)",
                 clean_text,
             )
             if price_match:
@@ -125,6 +125,14 @@ class FallbackSearchService:
             filters.query_text = 'рок|rock'
         elif re.search(r'\b(?:хокке\w*|hockey)\b', clean_text):
             filters.query_text = 'хоккей|hockey'
+        elif re.search(r'\b(?:футбол\w*|football)\b', clean_text):
+            filters.query_text = 'футбол|football'
+        elif re.search(r'\b(?:волейбол\w*|volleyball)\b', clean_text):
+            filters.query_text = 'волейбол'
+        elif re.search(r'\b(?:баскетбол\w*|basketball)\b', clean_text):
+            filters.query_text = 'баскетбол'
+        elif re.search(r'\b(?:спорт\w*|матч\w*|турнир\w*)\b', clean_text):
+            filters.query_text = 'спорт|хоккей|футбол'
         elif re.search(r'\b(?:танц\w*|танцевальн\w*|dance)\b', clean_text):
             filters.query_text = 'танцы|танцевальный|танцевальная|dance'
         elif re.search(r'\b(?:джаз\w*|jazz)\b', clean_text):
@@ -145,9 +153,8 @@ class FallbackSearchService:
         """Выполняет поиск без языковой модели и возвращает гарантированный структурированный ответ."""
         started = monotonic()
         filters = await self.parse_free_text_deterministically(message)
-        unsupported_sport = bool(re.search(r'\b(?:спорт\w*|футбол\w*|матч\w*|соревнован\w*)', message.lower())) and not filters.query_text
         needs_city = not filters.city
-        result = None if needs_city or unsupported_sport else await self.catalog_service.search_catalog(filters)
+        result = None if needs_city else await self.catalog_service.search_catalog(filters)
 
         recommendations = [
             AgentRecommendationItemDTO(
@@ -158,9 +165,7 @@ class FallbackSearchService:
         ]
 
         trace_id = uuid4()
-        if unsupported_sport:
-            reply_intro = 'Сейчас спортивные события не поддерживаются в каталоге. Попробуйте другое направление.'
-        elif needs_city:
+        if needs_city:
             reply_intro = 'В каком городе ищем события?'
         elif recommendations:
             reply_intro = f'Нашлось событий: {len(recommendations)}. Сейчас работает упрощённый поиск — проверьте остальные условия.'

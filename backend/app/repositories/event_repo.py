@@ -107,6 +107,7 @@ class EventRepository:
         topic_clauses = []
         for term in terms:
             ts_query = func.plainto_tsquery("russian", term)
+            clean_term = re.sub(r"[^a-zA-Zа-яА-Я0-9]", "", term)
             if term in {"хоккей", "hockey"}:
                 topic_clauses.extend([
                     func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)"),
@@ -118,6 +119,15 @@ class EventRepository:
                 func.lower(Event.description).op("~*")(rf"(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)"),
                 Event.tags.contains([term]),
             ])
+            if term in {"кино", "фильм", "фильмы", "кинотеатр"}:
+                topic_clauses.extend([Event.category == EventCategory.CINEMA, Event.tags.contains(["кино"])])
+            if term in {"футбол", "football"}:
+                topic_clauses.extend([
+                    func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])футбол[[:alpha:]]*([^[:alnum:]]|$)"),
+                    Event.tags.contains(["футбол"]),
+                ])
+            if clean_term:
+                topic_clauses.append(Event.tsv.op("@@")(func.to_tsquery("russian", f"{clean_term}:*")))
         topic_clauses.append(Event.normalized_title.op("%")(query.casefold().replace("ё", "е")))
         return or_(*topic_clauses)
 
@@ -285,6 +295,8 @@ class EventRepository:
             existing.description = max(existing.description or "", event_data.get("description") or "", key=len)
             if event_data.get("org_link") and not existing.org_link:
                 existing.org_link = event_data["org_link"]
+            if event_data.get("image_url") and not existing.image_url:
+                existing.image_url = event_data["image_url"]
             if event_data.get("lat") is not None and existing.lat is None:
                 existing.lat = event_data["lat"]
                 existing.lon = event_data["lon"]
