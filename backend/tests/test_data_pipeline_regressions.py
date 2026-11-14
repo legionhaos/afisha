@@ -13,6 +13,7 @@ from app.schemas.event import EventSearchFilterDTO
 from app.schemas.import_mod import ImportReportDTO
 from app.services.deduplication_service import DeduplicationService
 from app.services.import_service import ImportService
+from app.services.embedding_service import EmbeddingService
 from app.services.normalization_service import NormalizationService
 
 
@@ -233,6 +234,20 @@ def test_deduplication_preserves_existing_organizer_link():
 def test_explicit_category_takes_precedence(raw, title, description, expected):
     category, _ = NormalizationService().normalize_category(raw, title, description)
     assert category == expected
+
+
+@pytest.mark.asyncio
+async def test_zero_embedding_falls_back_to_text(monkeypatch):
+    import importlib
+
+    module = importlib.import_module("app.services.embedding_service")
+    settings = SimpleNamespace(
+        EMBEDDING_API_KEY=SimpleNamespace(get_secret_value=lambda: "test-key"),
+        LLM_API_KEY=SimpleNamespace(get_secret_value=lambda: "test-key"),
+    )
+    svc = EmbeddingService(settings=settings)
+    monkeypatch.setattr(module.llm_circuit_breaker, "call", AsyncMock(return_value=[0.0] * 1536))
+    assert await svc.generate_embedding("концерт") is None
 
 
 def test_age_is_not_inferred_from_arbitrary_description_numbers():
