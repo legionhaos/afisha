@@ -21,6 +21,7 @@ class DatabaseManager:
         self._engine: AsyncEngine | None = None
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
         self._checkpointer_pool: AsyncConnectionPool | None = None
+        self._checkpointer: Any = None
 
     async def init_pools(self, settings: Settings | None = None) -> None:
         if settings is None:
@@ -55,11 +56,15 @@ class DatabaseManager:
             open=False,
         )
         await self._checkpointer_pool.open()
+        from app.agent.checkpointer import CheckpointerManager
+        self._checkpointer = CheckpointerManager.get_checkpointer(self._checkpointer_pool)
+        await self._checkpointer.setup()
 
     async def close_pools(self) -> None:
         if self._checkpointer_pool is not None:
             await self._checkpointer_pool.close()
             self._checkpointer_pool = None
+            self._checkpointer = None
 
         if self._engine is not None:
             await self._engine.dispose()

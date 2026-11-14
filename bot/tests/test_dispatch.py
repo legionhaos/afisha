@@ -32,6 +32,18 @@ async def test_real_dispatch_start_and_filter_flow():
         await click(5, 'date:weekend')
         await click(6, 'price:free')
         api.events.assert_awaited_once_with({'city': 'Уфа', 'category': 'theater', 'date_preset': 'weekend', 'is_free': 'true', 'page_size': 5, 'page': 1})
+        api.dictionaries = AsyncMock(return_value={'cities': [{'name': 'Уфа'}]})
+        api.chat = AsyncMock(side_effect=[
+            {'clarifying_question': 'В каком городе?', 'recommendations': []},
+            {'reply_text': 'Результаты поиска', 'recommendations': []},
+        ])
+        await text(7, '/catalog')
+        await text(8, '/cancel')
+        await text(9, 'выставка')
+        await text(10, 'уфа')
+        assert api.chat.await_count == 2
+        assert api.chat.await_args.args[0]['message'] == 'выставка. Город: Уфа'
+        assert any('отменён' in str(call) for call in bot.session.make_request.await_args_list)
     finally:
         await dp.storage.close()
         await bot.session.close()

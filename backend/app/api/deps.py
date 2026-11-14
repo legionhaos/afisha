@@ -148,6 +148,7 @@ def get_agent_orchestrator(
         audit_repo=audit_repo,
         catalog_service=catalog_service,
         fallback_service=fallback_service,
+        checkpointer=db_manager._checkpointer,
     )
 
 

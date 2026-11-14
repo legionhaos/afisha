@@ -7,7 +7,7 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.api_client import APIError
-from app.handlers.commands import chat_city_callback, idle_text, menu_callback, send_chat, start
+from app.handlers.commands import chat, chat_city_callback, chat_city_text, idle_text, menu_callback, send_chat, start
 from app.states import Flow
 
 
@@ -87,11 +87,39 @@ async def test_city_selection_preserves_query_and_rejects_other_cities(state):
 
 
 @pytest.mark.asyncio
-async def test_idle_message_does_not_start_assistant():
+async def test_idle_message_starts_assistant(state):
     message = make_message()
-    await idle_text(message)
-    assert 'нажми «Спросить помощника»' in message.answer.await_args.args[0]
-    assert 'menu:chat' in str(message.answer.await_args.kwargs['reply_markup'])
+    message.text = 'концерты в Уфе'
+    api = SimpleNamespace(chat=AsyncMock(return_value={'reply_text': 'Нашлось', 'recommendations': []}))
+    await idle_text(message, state, api)
+    assert await state.get_state() == Flow.assistant.state
+    assert api.chat.await_args.args[0]['message'] == message.text
+
+
+@pytest.mark.asyncio
+async def test_city_text_keeps_original_query(state):
+    await state.set_state(Flow.chat_city)
+    await state.update_data(chat_pending_message='выставка', chat_cities=['Уфа'])
+    message = make_message()
+    message.text = 'в уфе пожалуйста'
+    api = SimpleNamespace(chat=AsyncMock(return_value={'reply_text': 'Нашлось', 'recommendations': []}))
+    await chat_city_text(message, state, api)
+    assert api.chat.await_args.args[0]['message'] == 'выставка. Город: Уфа'
+    assert await state.get_state() == Flow.assistant.state
+
+
+@pytest.mark.asyncio
+async def test_followup_next_week_keeps_city_and_hockey(state):
+    await state.set_state(Flow.assistant)
+    await state.update_data(last_fallback_query='хочу на хоккей в уфе на этой неделе')
+    message = make_message()
+    message.text = 'а на следующей'
+    api = SimpleNamespace(chat=AsyncMock(return_value={'is_fallback_mode': True, 'reply_text': 'Не нашлось', 'recommendations': []}))
+    await chat(message, state, api)
+    query = api.chat.await_args.args[0]['message']
+    assert 'хоккей' in query and 'уфе' in query
+    assert 'на следующей неделе' in query
+    assert 'на этой неделе' not in query
 
 
 @pytest.mark.asyncio

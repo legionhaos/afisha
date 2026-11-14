@@ -2,11 +2,142 @@ import json
 from uuid import uuid4
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.agent.checkpointer import trim_conversation_history
+from app.agent.orchestrator import CulturalAgentOrchestrator
+from app.agent.state import AgentGraphState
 from app.agent.guardrails import GuardrailService
 from app.agent.tools import AgentToolsFactory
 from unittest.mock import AsyncMock, MagicMock
+
+
+@pytest.mark.asyncio
+async def test_graph_keeps_history_per_user_and_thread():
+    from app.schemas.chat import ChatMessageRequestDTO
+
+    class FakeLLM:
+        def __init__(self):
+            self.calls = []
+
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls.append(messages)
+            return AIMessage(content='{"event_ids": [], "needs_clarification": true}')
+
+    class Breaker:
+        def can_execute(self):
+            return True
+
+        async def call(self, operation):
+            return await operation()
+
+    llm = FakeLLM()
+    agent = CulturalAgentOrchestrator(None, None, None, None, None, None, None,
+                                      circuit_breaker=Breaker(), checkpointer=InMemorySaver())
+    agent._get_llm = lambda: llm
+    for message in ['выставка', 'в уфе']:
+        await agent.invoke_chat(ChatMessageRequestDTO(user_identifier='alice', thread_id='same', message=message), 'test')
+    other = CulturalAgentOrchestrator(None, None, None, None, None, None, None,
+                                      circuit_breaker=Breaker(), checkpointer=agent.checkpointer)
+    other._get_llm = lambda: llm
+    await other.invoke_chat(ChatMessageRequestDTO(user_identifier='bob', thread_id='same', message='концерт'), 'test')
+    assert [m.content for m in llm.calls[1] if isinstance(m, HumanMessage)] == ['выставка', 'в уфе']
+    assert [m.content for m in llm.calls[2] if isinstance(m, HumanMessage)] == ['концерт']
+
+
+@pytest.mark.asyncio
+async def test_successful_search_finishes_without_second_llm_call():
+    from app.schemas.chat import ChatMessageRequestDTO
+    from app.schemas.event import PaginatedEventsResponseDTO
+
+    class LLM:
+        calls = 0
+        def bind_tools(self, tools):
+            return self
+        async def ainvoke(self, messages):
+            self.calls += 1
+            return AIMessage(content='', tool_calls=[{'name': 'search_events', 'args': {'city': 'Уфа'}, 'id': 'search-1', 'type': 'tool_call'}])
+
+    class Breaker:
+        def can_execute(self):
+            return True
+        async def call(self, operation):
+            return await operation()
+
+    llm = LLM()
+    catalog = AsyncMock()
+    catalog.search_catalog.return_value = PaginatedEventsResponseDTO(items=[], total=0, page=1, page_size=5)
+    agent = CulturalAgentOrchestrator(None, None, None, None, None, catalog, None, circuit_breaker=Breaker())
+    agent._get_llm = lambda: llm
+    response = await agent.invoke_chat(ChatMessageRequestDTO(user_identifier='alice', thread_id='one', message='события в Уфе'), 'test')
+    assert llm.calls == 1
+    assert response.recommendations == []
+    assert response.clarifying_question is None
+
+
+@pytest.mark.asyncio
+async def test_fallback_preserves_pending_city_clarification():
+    from app.schemas.chat import ChatMessageRequestDTO, ChatMessageResponseDTO
+
+    class LLM:
+        def bind_tools(self, tools):
+            return self
+
+        async def ainvoke(self, messages):
+            return AIMessage(content='{"event_ids": [], "needs_clarification": true}')
+
+    class Breaker:
+        available = True
+
+        def can_execute(self):
+            return self.available
+
+        async def call(self, operation):
+            return await operation()
+
+    breaker = Breaker()
+    fallback = AsyncMock()
+    fallback.execute_fallback_query.return_value = ChatMessageResponseDTO(
+        thread_id='same', trace_id=uuid4(), reply_text='Результат', is_fallback_mode=True,
+    )
+    agent = CulturalAgentOrchestrator(None, None, None, None, None, None, fallback,
+                                      circuit_breaker=breaker, checkpointer=InMemorySaver())
+    agent._get_llm = lambda: LLM()
+    await agent.invoke_chat(ChatMessageRequestDTO(user_identifier='alice', thread_id='same', message='выставка'), 'test')
+    breaker.available = False
+    await agent.invoke_chat(ChatMessageRequestDTO(user_identifier='alice', thread_id='same', message='в Уфе'), 'test')
+    assert fallback.execute_fallback_query.await_args.kwargs['message'] == 'выставка. в Уфе'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('kind', 'expected'), [('interest', 'Что интереснее'), ('date', 'На какие даты'), ('city', 'В каком городе')])
+async def test_agent_asks_requested_clarification(kind, expected):
+    agent = CulturalAgentOrchestrator(None, None, None, None, None, None, None)
+    result = await agent.finalize_output_node({
+        'thread_id': 'test', 'messages': [HumanMessage(content='Помоги найти событие'),
+            AIMessage(content=json.dumps({'event_ids': [], 'needs_clarification': True, 'clarification_type': kind}))],
+        'verified_cards_map': {}, 'grounding_event_ids': [],
+    })
+    response = result['final_structured_output']
+    assert expected in response['clarifying_question']
+    assert response['reply_text'] == response['clarifying_question']
+    assert not response['recommendations']
+
+
+@pytest.mark.asyncio
+async def test_final_output_keeps_structured_clarification_in_graph_state():
+    assert 'final_structured_output' in AgentGraphState.__annotations__
+    agent = CulturalAgentOrchestrator(None, None, None, None, None, None, None)
+    result = await agent.finalize_output_node({
+        'thread_id': 'test', 'messages': [HumanMessage(content='Хочу на концерт'),
+                                          AIMessage(content='{"event_ids": [], "needs_clarification": true}')],
+        'verified_cards_map': {}, 'grounding_event_ids': [],
+    })
+    assert result['final_structured_output']['clarifying_question'] == 'В каком городе ищем события?'
+    assert result['final_structured_output']['recommendations'] == []
 
 
 def test_guardrail_injection_detection():
@@ -71,6 +202,16 @@ def test_trim_conversation_history():
     # Remaining messages: 1 system + 10 recent messages
     assert len(trimmed) == 11
     assert trimmed[-1].content == "Answer 19"
+
+
+@pytest.mark.asyncio
+async def test_search_rejects_unknown_category_without_broadening():
+    catalog = AsyncMock()
+    factory = AgentToolsFactory(AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), catalog)
+    search = next(tool for tool in factory.create_tools() if tool.name == 'search_events')
+    result = json.loads(await search.ainvoke({'city': 'Уфа', 'category': 'выставки'}))
+    assert result['error'] == 'INVALID_CATEGORY'
+    catalog.search_catalog.assert_not_awaited()
 
 
 @pytest.mark.asyncio

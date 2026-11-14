@@ -202,10 +202,14 @@ class AgentToolsFactory:
                     try:
                         cat_enum = EventCategory(category.lower())
                     except ValueError:
-                        pass
+                        return json.dumps({"error": "INVALID_CATEGORY"})
 
+                if date_preset and date_preset not in ["today", "tomorrow", "weekend", "week"]:
+                    return json.dumps({"error": "INVALID_DATE_PRESET"})
                 parsed_df = self.norm.parse_date_to_yekaterinburg(date_from) if date_from else None
                 parsed_dt = self.norm.parse_date_to_yekaterinburg(date_to) if date_to else None
+                if (date_from and parsed_df is None) or (date_to and parsed_dt is None):
+                    return json.dumps({"error": "INVALID_DATE"})
 
                 filters = EventSearchFilterDTO(
                     query_text=query_text,

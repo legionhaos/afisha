@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import re
 import time
 from collections.abc import AsyncIterator
 from decimal import Decimal
@@ -57,6 +58,7 @@ class CulturalAgentOrchestrator:
         fallback_service: Any,
         settings: Any = None,
         circuit_breaker: Any = None,
+        checkpointer: Any = None,
     ) -> None:
         self.event_repo = event_repo
         self.dict_repo = dict_repo
@@ -76,6 +78,7 @@ class CulturalAgentOrchestrator:
         self.guardrails = GuardrailService()
         self.tools_factory: Any = None
         self.graph: Any = None
+        self.checkpointer = checkpointer
 
     def _get_llm(self) -> Any:
         from langchain_openai import ChatOpenAI
@@ -85,6 +88,7 @@ class CulturalAgentOrchestrator:
             openai_api_base=self.settings.LLM_BASE_URL,
             temperature=0.0,
             timeout=self.settings.LLM_TIMEOUT_SEC,
+            max_retries=0,
         )
 
     async def act_tools_node(self, state: AgentGraphState) -> dict[str, Any]:
@@ -167,9 +171,12 @@ class CulturalAgentOrchestrator:
         """Финализация ответа агента с проверкой Zero Hallucination и аудит-трассировкой."""
         from app.schemas.event import EventCardDTO
         from app.schemas.chat import AgentRecommendationItemDTO, ChatMessageResponseDTO
-        start = state.get('started_monotonic', time.monotonic())
+        start = state.get('started_monotonic', time.monotonic()) or time.monotonic()
         selected_ids: list[str] = []
         needs_clarification = True
+        if state.get('search_complete'):
+            needs_clarification = False
+        clarification_type = 'city'
         messages = state.get('messages', [])
         if messages and isinstance(messages[-1], AIMessage) and not getattr(messages[-1], 'tool_calls', None):
             try:
@@ -177,11 +184,13 @@ class CulturalAgentOrchestrator:
                 if isinstance(selection, dict) and isinstance(selection.get('event_ids'), list):
                     selected_ids = [str(UUID(str(item))) for item in selection['event_ids'][:50]]
                     needs_clarification = selection.get('needs_clarification') is not False
+                    if selection.get('clarification_type') in ('city', 'interest', 'date'):
+                        clarification_type = selection['clarification_type']
             except (TypeError, ValueError, AttributeError):
                 pass
 
         verified = state.get('verified_cards_map', {})
-        target_ids = dict.fromkeys(selected_ids) if selected_ids else state.get('grounding_event_ids', [])
+        target_ids = dict.fromkeys(selected_ids) if selected_ids else (state.get('grounding_event_ids', []) if not needs_clarification else [])
         grounded = self.guardrails.verify_output_grounding(
             {'events': [{'id': identifier} for identifier in target_ids]}, verified)
         cards = [EventCardDTO.model_validate(value) for value in grounded.get('events', [])]
@@ -216,10 +225,22 @@ class CulturalAgentOrchestrator:
             and "SECURE_CONFIRMATION_STORE_REQUIRED" in entry.get("response_sample", "")
             for entry in state.get("tool_Executions", state.get("tool_executions", []))
         )
-        if state.get("requires_confirmation"):
+        last_human = next((str(m.content) for m in reversed(messages) if isinstance(m, HumanMessage)), '')
+        is_greeting = bool(re.fullmatch(r'\s*(?:привет|здравствуй(?:те)?|хай|добрый\s+(?:день|вечер)|кто ты|чем (?:ты )?можешь помочь)[\s!,.?]*', last_human, re.IGNORECASE))
+        if state.get('injection_detected'):
+            clean_reply = state.get('final_response_text') or 'Пожалуйста, задайте вопрос по афише.'
+        elif state.get("requires_confirmation"):
             clean_reply = "Проверьте описание действия и подтвердите его."
         elif action_unavailable:
             clean_reply = "Оформление подписки или отправка обращения через помощника временно недоступны."
+        elif is_greeting:
+            clean_reply = 'Привет! Помогу найти мероприятия в Башкортостане. В каком городе ищем?'
+        elif needs_clarification and not cards:
+            clean_reply = {
+                'city': 'В каком городе ищем события?',
+                'interest': 'Что интереснее: концерт, театр, выставка или что-то другое? Можно выбрать любые события.',
+                'date': 'На какие даты ищем: сегодня, в выходные или любые?',
+            }[clarification_type]
         else:
             clean_reply = refusal or ('Вот мероприятия из каталога. Уточните условия у организатора.' if cards else 'Не удалось подобрать мероприятия. Уточните запрос или повторите поиск.')
 
@@ -234,7 +255,7 @@ class CulturalAgentOrchestrator:
             thread_id=state.get('thread_id', 'thread'),
             trace_id=trace_val,
             reply_text=clean_reply,
-            clarifying_question='Уточните город, дату и другие важные условия.' if needs_clarification and not refusal and not cards else None,
+            clarifying_question=clean_reply if needs_clarification and not refusal and not cards and not is_greeting and not state.get('injection_detected') else None,
             recommendations=recommendations,
         )
         dumped = response.model_dump(mode='json') if hasattr(response, 'model_dump') else response
@@ -318,7 +339,13 @@ class CulturalAgentOrchestrator:
                     "plan_steps": ["circuit_breaker_open_switch_to_fallback"],
                 }
 
+            from langchain_core.messages import RemoveMessage
+            history = state.get('messages', [])
+            trimmed = trim_conversation_history(history, min_turns=5, max_messages=20)
+            retained_ids = {m.id for m in trimmed if m.id}
+            removed = [RemoveMessage(id=m.id) for m in history if m.id and m.id not in retained_ids]
             return {
+                "messages": removed,
                 "step_count": 0,
                 "verified_cards_map": verified_cards_collector,
                 "plan_steps": ["input_validated"],
@@ -362,6 +389,19 @@ class CulturalAgentOrchestrator:
                     last_human = str(m.content)
                     break
 
+            history = state['messages']
+            humans = [str(m.content) for m in history if isinstance(m, HumanMessage)]
+            previous_ai = next((m for m in reversed(history[:-1]) if isinstance(m, AIMessage) and not m.tool_calls), None)
+            awaiting_clarification = False
+            if previous_ai:
+                try:
+                    previous_output = json.loads(previous_ai.content)
+                    awaiting_clarification = isinstance(previous_output, dict) and previous_output.get('needs_clarification') is True
+                except (TypeError, ValueError):
+                    pass
+            if awaiting_clarification and len(humans) >= 2:
+                last_human = f'{humans[-2]}. {last_human}'[:2000]
+
             res = await self.fallback_service.execute_fallback_query(
                 thread_id=state["thread_id"],
                 user_identifier=state["user_identifier"],
@@ -391,6 +431,7 @@ class CulturalAgentOrchestrator:
             executed = state.get("tool_call_count", 0)
             requires_confirmation = state.get("requires_confirmation", False)
             pending_action = state.get("pending_action")
+            search_complete = False
 
             for call in last_msg.tool_calls:
                 tool_name = call.get("name", "")
@@ -428,6 +469,8 @@ class CulturalAgentOrchestrator:
                             "summary": parsed.get("summary"),
                         }
                     elif isinstance(parsed, dict):
+                        if tool_name == 'search_events' and 'error' not in parsed and isinstance(parsed.get('count'), int):
+                            search_complete = True
                         key_by_tool = {"search_events": "events", "find_similar": "similar_events", "get_venue_schedule": "schedule"}
                         key = key_by_tool.get(tool_name)
                         if key and isinstance(parsed.get(key), list):
@@ -439,11 +482,12 @@ class CulturalAgentOrchestrator:
 
             return {
                 "messages": tool_messages,
-                "tool_executions": tool_traces,
+                "tool_executions": state.get('tool_executions', []) + tool_traces,
                 "tool_Executions": tool_traces,
-                "grounding_event_ids": grounding_ids,
+                "grounding_event_ids": state.get('grounding_event_ids', []) + grounding_ids,
                 "verified_cards_map": verified_cards_collector,
                 "tool_call_count": executed,
+                "search_complete": search_complete,
                 "requires_confirmation": requires_confirmation,
                 "pending_action": pending_action,
                 "plan_steps": [f"executed_tools_{len(tool_messages)}"],
@@ -486,13 +530,13 @@ class CulturalAgentOrchestrator:
         })
         workflow.add_conditional_edges(
             "act_tools",
-            lambda s: "finalize_output" if s.get("requires_confirmation") or s.get("step_count", 0) >= 5 else "reason",
+            lambda s: "finalize_output" if s.get("requires_confirmation") or s.get("search_complete") or s.get("step_count", 0) >= 5 else "reason",
             {"finalize_output": "finalize_output", "reason": "reason"},
         )
         workflow.add_edge("finalize_output", END)
         workflow.add_edge("fallback", END)
 
-        return workflow.compile()
+        return workflow.compile(checkpointer=self.checkpointer)
 
     async def invoke_chat(
         self,
@@ -511,13 +555,6 @@ class CulturalAgentOrchestrator:
             raise PermissionError('Tool factory does not belong to the requesting user')
 
         allowed, _ = self.guardrails.check_user_input(req.message)
-        if allowed and self.fallback_service:
-            import re
-            if re.search(r'\b(?:рок(?:а|у|ом|е)?|rock|хокке\w*|hockey|танц\w*|танцевальн\w*|dance|джаз\w*|jazz|музыкальн\w*\s+вечер\w*)\b', req.message.lower()):
-                return await self.fallback_service.execute_fallback_query(
-                    thread_id=req.thread_id, user_identifier=req.user_identifier,
-                    message=req.message, request_id=request_id,
-                )
         safe_message = req.message if allowed else '[Сообщение заблокировано защитой]'
         state = {
             'messages': [HumanMessage(content=safe_message)],
@@ -526,6 +563,7 @@ class CulturalAgentOrchestrator:
             'request_id': request_id,
             'step_count': 0,
             'tool_call_count': 0,
+            'search_complete': False,
             'plan_steps': [],
             'tool_Executions': [],
             'tool_executions': [],

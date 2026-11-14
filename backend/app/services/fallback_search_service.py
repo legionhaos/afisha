@@ -77,6 +77,9 @@ class FallbackSearchService:
             filters.date_from = today_start + timedelta(days=days_until_sat)
             days = 1 if now_yekt.weekday() == 6 else 2
             filters.date_to = filters.date_from + timedelta(days=days, microseconds=-1)
+        elif re.search(r'\b(?:на\s+)?следующ\w*\s+недел\w*\b', clean_text):
+            filters.date_from = today_start + timedelta(days=7 - now_yekt.weekday())
+            filters.date_to = filters.date_from + timedelta(days=7, microseconds=-1)
         elif "на этой неделе" in clean_text:
             filters.date_from = today_start
             filters.date_to = today_end + timedelta(days=6 - now_yekt.weekday())
@@ -143,9 +146,8 @@ class FallbackSearchService:
         started = monotonic()
         filters = await self.parse_free_text_deterministically(message)
         unsupported_sport = bool(re.search(r'\b(?:спорт\w*|футбол\w*|матч\w*|соревнован\w*)', message.lower())) and not filters.query_text
-        needs_interest = not filters.category and not filters.query_text and not unsupported_sport
         needs_city = not filters.city
-        result = None if needs_city or needs_interest or unsupported_sport else await self.catalog_service.search_catalog(filters)
+        result = None if needs_city or unsupported_sport else await self.catalog_service.search_catalog(filters)
 
         recommendations = [
             AgentRecommendationItemDTO(
@@ -158,8 +160,6 @@ class FallbackSearchService:
         trace_id = uuid4()
         if unsupported_sport:
             reply_intro = 'Сейчас спортивные события не поддерживаются в каталоге. Попробуйте другое направление.'
-        elif needs_interest:
-            reply_intro = 'Какое событие вы ищете? Например, рок-концерт или хоккейный матч.'
         elif needs_city:
             reply_intro = 'В каком городе ищем события?'
         elif recommendations:
@@ -190,6 +190,6 @@ class FallbackSearchService:
             recommendations=recommendations,
             is_fallback_mode=True,
             fallback_notice="Работает упрощённый поиск без ИИ.",
-            clarifying_question=('Какое событие вы ищете?' if needs_interest else 'В каком городе ищем события?' if needs_city and not unsupported_sport else None),
+            clarifying_question=('В каком городе ищем события?' if needs_city and not unsupported_sport else None),
             data_grounded_badge="Ответ построен исключительно по проверенным данным сервиса",
         )

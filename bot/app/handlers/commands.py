@@ -1,3 +1,4 @@
+import re
 import secrets
 from typing import Any
 from uuid import uuid4
@@ -346,6 +347,10 @@ async def confirm(callback: CallbackQuery, state: FSMContext, api: APIClient) ->
 
 async def send_chat(message: Message, state: FSMContext, api: APIClient, payload: dict[str, Any]) -> None:
     result = await api.chat(payload)
+    if result.get('is_fallback_mode'):
+        await state.update_data(last_fallback_query=payload['message'])
+    else:
+        await state.update_data(last_fallback_query=None)
     question = (result.get('clarifying_question') or '')
     if 'город' in question.lower() and not result.get('recommendations'):
         try:
@@ -450,7 +455,47 @@ async def chat(message: Message, state: FSMContext, api: APIClient) -> None:
     data = await state.get_data()
     thread = data.get('thread_id') or str(uuid4())
     await state.update_data(thread_id=thread, pending=None)
-    payload = {'thread_id': thread, 'user_identifier': user_id(message), 'message': message.text}
+    text = message.text.strip()
+    previous = data.get('last_fallback_query')
+    if previous and re.fullmatch(r'(?:а\s+)?(?:на\s+)?следующ(?:ей|ую)\s*(?:неделе|неделю)?[?!.\s]*', text, re.IGNORECASE):
+        previous = re.sub(r'\b(?:на\s+)?(?:этой|следующей)\s+неделе\b', '', previous, flags=re.IGNORECASE)
+        previous = re.sub(r'\b(?:сегодня|завтра|на\s+выходных|в\s+субботу|в\s+воскресенье)\b', '', previous, flags=re.IGNORECASE)
+        text = f'{previous.strip()} на следующей неделе'[:2000]
+    payload = {'thread_id': thread, 'user_identifier': user_id(message), 'message': text}
+    try:
+        await send_chat(message, state, api, payload)
+    except APIError as exc:
+        await error(message, exc)
+
+
+@router.message(F.text, StateFilter(Flow.chat_city))
+async def chat_city_text(message: Message, state: FSMContext, api: APIClient) -> None:
+    data = await state.get_data()
+    text = message.text.strip().lower().replace('ё', 'е')
+    words = set(re.findall(r'[а-яa-z-]+', text))
+    city = None
+    for name in data.get('chat_cities', []):
+        normalized = name.lower().replace('ё', 'е')
+        forms = {normalized}
+        if normalized == 'уфа':
+            forms.update({'уфе', 'уфу', 'уфы'})
+        elif normalized.endswith('а') and len(normalized) > 4:
+            forms.update({normalized[:-1] + suffix for suffix in ('е', 'у', 'ы')})
+        elif normalized.endswith('й') and len(normalized) > 4:
+            forms.update({normalized[:-1] + suffix for suffix in ('ом', 'ого')})
+        elif len(normalized) > 4 and normalized[-1] not in 'оеьы':
+            forms.update({normalized + suffix for suffix in ('е', 'а', 'у', 'ом')})
+        if forms & words or (' ' in normalized and re.search(rf'(?<!\w){re.escape(normalized)}(?!\w)', text)):
+            city = name
+            break
+    if not city:
+        await message.answer('Не нашёл такой город. Напиши его название или выбери кнопку; /cancel отменяет поиск.')
+        return
+    original = data.get('chat_pending_message', '')
+    await state.set_state(Flow.assistant)
+    await state.update_data(chat_pending_message=None, chat_cities=[])
+    payload = {'thread_id': data.get('thread_id') or str(uuid4()), 'user_identifier': user_id(message),
+               'message': f'{original}. Город: {city}'}
     try:
         await send_chat(message, state, api, payload)
     except APIError as exc:
@@ -458,8 +503,12 @@ async def chat(message: Message, state: FSMContext, api: APIClient) -> None:
 
 
 @router.message(F.text, StateFilter(None))
-async def idle_text(message: Message) -> None:
-    await message.answer('Выбери действие в меню. Чтобы задать вопрос, нажми «Спросить помощника».', reply_markup=main_menu())
+async def idle_text(message: Message, state: FSMContext, api: APIClient) -> None:
+    if message.text.startswith('/'):
+        await message.answer('Неизвестная команда. /help — список команд.')
+        return
+    await state.set_state(Flow.assistant)
+    await chat(message, state, api)
 
 
 @router.message()
