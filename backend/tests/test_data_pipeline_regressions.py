@@ -99,6 +99,7 @@ async def test_cancelled_markers_include_yo_and_gender(extra):
     await svc._process_single_row(payload(**extra), 1, "test", "request", report)
     data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
     assert data["status"] == EventStatus.CANCELLED
+    svc.emb_service.generate_embedding.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -112,6 +113,7 @@ async def test_crawler_unverified_records_remain_drafts(extra):
     assert data["status"] == EventStatus.DRAFT
     assert data["is_disputed"] is True
     assert report.flagged_for_moderation_count == 1
+    svc.emb_service.generate_embedding.assert_not_awaited()
 
 
 @pytest.mark.asyncio

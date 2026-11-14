@@ -370,9 +370,12 @@ class ImportService:
         else:
             event_dict_payload["status"] = EventStatus.PUBLISHED
 
-        # 6. Вычисление эмбеддинга
-        embedding = await self.emb_service.generate_embedding(f"{title} {description}")
-        event_dict_payload["embedding"] = embedding
+        # Безопаснее не передавать неподтверждённое описание провайдеру
+        # эмбеддингов: внешние данные могут содержать инструкции.
+        if event_dict_payload["is_disputed"] or event_dict_payload["status"] != EventStatus.PUBLISHED:
+            event_dict_payload["embedding"] = None
+        else:
+            event_dict_payload["embedding"] = await self.emb_service.generate_embedding(f"{title} {description}")
 
         # 7. Идемпотентное сохранение / дедупликация
         if replay_record is not None and raw_record.processed_event_id is not None:
