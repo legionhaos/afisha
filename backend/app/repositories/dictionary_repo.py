@@ -18,7 +18,7 @@ class DictionaryRepository:
         self.session = session
 
     async def resolve_city_name(self, raw_city: str) -> str | None:
-        """Нечеткий поиск города через триграммы pg_trgm с порогом 0.45 для исправления опечаток."""
+        """Ищет город по точному совпадению или триграммам с порогом 0.3."""
         if not raw_city or not raw_city.strip():
             return None
 
@@ -112,15 +112,15 @@ class DictionaryRepository:
         if existing:
             return existing
 
-        city = City(
-            id=uuid4(),
-            name=name,
-            normalized_name=normalized_name,
-            lat=lat,
-            lon=lon,
-        )
-        self.session.add(city)
-        await self.session.flush()
+        stmt = (insert(City).values(
+            id=uuid4(), name=name, normalized_name=normalized_name, lat=lat, lon=lon,
+        ).on_conflict_do_nothing(index_elements=[City.name]).returning(City))
+        city = await self.session.scalar(stmt)
+        if city is not None:
+            return city
+        city = await self.session.scalar(select(City).where(City.name == name))
+        if city is None:
+            raise RuntimeError("Конфликтующий город недоступен; повторите транзакцию")
         return city
 
     async def upsert_venue(
@@ -142,15 +142,16 @@ class DictionaryRepository:
         if existing:
             return existing
 
-        venue = Venue(
-            id=uuid4(),
-            city_id=city_id,
-            name=name,
-            normalized_name=normalized_name,
-            address=address,
-            lat=lat,
-            lon=lon,
-        )
-        self.session.add(venue)
-        await self.session.flush()
+        stmt = (insert(Venue).values(
+            id=uuid4(), city_id=city_id, name=name, normalized_name=normalized_name,
+            address=address, lat=lat, lon=lon,
+        ).on_conflict_do_nothing(index_elements=[Venue.city_id, Venue.normalized_name]).returning(Venue))
+        venue = await self.session.scalar(stmt)
+        if venue is not None:
+            return venue
+        venue = await self.session.scalar(select(Venue).where(
+            Venue.city_id == city_id, Venue.normalized_name == normalized_name,
+        ))
+        if venue is None:
+            raise RuntimeError("Конфликтующая площадка недоступна; повторите транзакцию")
         return venue
