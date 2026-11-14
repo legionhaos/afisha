@@ -11,7 +11,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from app.api_client import APIClient, APIError
 from app.formatters.card_formatter import format_card
-from app.keyboards.inline import choices, confirmation, main_menu_keyboard
+from app.keyboards.inline import choices, confirmation, main_menu_keyboard, paginated_cities
 from app.states import Flow
 
 router = Router()
@@ -19,15 +19,14 @@ WELCOME = (
     '<b>🎭 Афиша Республики Башкортостан</b>\n\n'
     'Привет! Я помогу найти интересные события в Башкортостане: '
     'спектакли, концерты, выставки и фестивали.\n\n'
-    'Выбери действие в меню ниже или открой <b>Mini App</b> для интерактивного просмотра. '
+    'Выбери действие в меню ниже. '
     'Для свободного вопроса нажми «Спросить помощника».'
 )
 HELP = (
     '<b>ℹ️ Как пользоваться ботом</b>\n\n'
-    '✨ <b>Mini App</b> — интерактивная афиша с карточками и фильтрами.\n'
     '🔎 <b>«Найти событие»</b> — пошаговый поиск по городу, категории, дате и цене.\n'
     '💬 <b>«Спросить помощника»</b> — задай любой вопрос своими словами (ИИ-поиск).\n'
-    '🔔 <b>«Подписки»</b> — настройка и просмотр персональных уведомлений.\n\n'
+    '🔔 <b>«Подписки»</b> — настройка подписок; рассылка уведомлений пока не работает.\n\n'
     '<code>/cancel</code> — отменить текущий поиск или начать новый диалог.\n'
     '<code>/start</code> — вернуться в главное меню.'
 )
@@ -92,15 +91,14 @@ async def show_city(message: Message, state: FSMContext, api: APIClient, subscri
         await message.answer('В справочнике пока нет городов для подписки.')
         return
     await state.clear()
-    await state.update_data(cities=cities)
+    await state.update_data(cities=cities, city_page=0)
     await state.set_state(Flow.subscription_city if subscription else Flow.city)
-    items = [(name, f'city:{i}') for i, name in enumerate(cities[:90])]
-    if not subscription:
-        items.insert(0, ('Все города', 'city:all'))
+    keyboard = paginated_cities(cities, 0, 'city', not subscription)
+    text = ('🔔 Рассылка уведомлений пока не работает.\n\n' if subscription else '') + 'Выберите город:'
     if edit:
-        await update_screen(message, 'Выберите город:', reply_markup=choices(items))
+        await update_screen(message, text, reply_markup=keyboard)
     else:
-        await message.answer('Выберите город:', reply_markup=choices(items))
+        await message.answer(text, reply_markup=keyboard)
 
 
 @router.message(Command('catalog'))
@@ -113,6 +111,28 @@ async def subscribe(message: Message, state: FSMContext, api: APIClient) -> None
     await show_city(message, state, api, True)
 
 
+@router.callback_query(F.data.startswith('citypage:'), StateFilter(Flow.city, Flow.subscription_city, Flow.chat_city))
+async def city_page_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    value = callback.data.split(':', 1)[1]
+    if not value.isascii() or not value.isdecimal() or len(value) > 9:
+        return
+    page = int(value)
+    current = await state.get_state()
+    if current not in (Flow.city.state, Flow.subscription_city.state, Flow.chat_city.state):
+        return
+    data = await state.get_data()
+    chat = current == Flow.chat_city.state
+    cities = data.get('chat_cities' if chat else 'cities', [])
+    all_cities = current == Flow.city.state
+    count = len(cities) + int(all_cities)
+    if page >= max(1, (count + 7) // 8) or abs(page - data.get('city_page', 0)) != 1:
+        return
+    await state.update_data(city_page=page)
+    text = 'В каком городе ищем? Выбери из списка — тогда покажу подходящие события.' if chat else 'Выберите город:'
+    await update_screen(callback.message, text, reply_markup=paginated_cities(cities, page, 'chatcity' if chat else 'city', all_cities))
+
+
 @router.callback_query(F.data.startswith('city:'), StateFilter(Flow.city, Flow.subscription_city))
 async def select_city(callback: CallbackQuery, state: FSMContext, api: APIClient) -> None:
     await callback.answer()
@@ -121,7 +141,7 @@ async def select_city(callback: CallbackQuery, state: FSMContext, api: APIClient
     value = callback.data.split(':', 1)[1]
     if value == 'all' and current == Flow.city.state:
         city = None
-    elif value.isdecimal() and int(value) < min(len(data['cities']), 90):
+    elif value.isascii() and value.isdecimal() and len(value) <= 9 and int(value) < len(data.get('cities', [])):
         city = data['cities'][int(value)]
     else:
         return
@@ -134,7 +154,7 @@ async def select_city(callback: CallbackQuery, state: FSMContext, api: APIClient
     await state.update_data(city=city, categories=categories)
     await state.set_state(Flow.subscription_category if current == Flow.subscription_city.state else Flow.category)
     items = [('Все категории', 'category:all')] + [(c['title_ru'], f'category:{i}') for i, c in enumerate(categories[:90])]
-    await update_screen(callback.message, 'Выберите категорию:', reply_markup=choices(items))
+    await update_screen(callback.message, 'Выберите категорию:', reply_markup=choices(items + [('← Назад', 'nav:city'), ('⌂ Главное меню', 'menu:home')]))
 
 
 @router.callback_query(F.data.startswith('category:'), StateFilter(Flow.category, Flow.subscription_category))
@@ -152,10 +172,10 @@ async def select_category(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(category=category)
     if current == Flow.subscription_category.state:
         await state.set_state(Flow.subscription_period)
-        await update_screen(callback.message, 'Выберите период:', reply_markup=choices([('Все мероприятия', 'period:all'), ('Выходные', 'period:weekend')]))
+        await update_screen(callback.message, 'Выберите период:', reply_markup=choices([('Все мероприятия', 'period:all'), ('Выходные', 'period:weekend'), ('← Назад', 'nav:category'), ('⌂ Главное меню', 'menu:home')]))
     else:
         await state.set_state(Flow.date)
-        await update_screen(callback.message, 'Выберите дату (UTC+5). «Выходные» — ближайшие суббота и воскресенье; «Неделя» — сегодня и следующие 7 дней.', reply_markup=choices([('Любая', 'date:all'), ('Сегодня', 'date:today'), ('Завтра', 'date:tomorrow'), ('Выходные', 'date:weekend'), ('Неделя', 'date:week')]))
+        await update_screen(callback.message, 'Выберите дату (UTC+5). «Выходные» — ближайшие суббота и воскресенье; «Неделя» — сегодня и следующие 7 дней.', reply_markup=choices([('Любая', 'date:all'), ('Сегодня', 'date:today'), ('Завтра', 'date:tomorrow'), ('Выходные', 'date:weekend'), ('Неделя', 'date:week'), ('← Назад', 'nav:category'), ('⌂ Главное меню', 'menu:home')]))
 
 
 @router.callback_query(F.data.startswith('date:'), StateFilter(Flow.date))
@@ -166,7 +186,7 @@ async def select_date(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.update_data(date_preset=None if value == 'all' else value)
     await state.set_state(Flow.price)
-    await update_screen(callback.message, 'Выберите цену. Ограничение «до» применяется к минимальной цене билета; другие билеты могут стоить дороже.', reply_markup=choices([('Любая', 'price:all'), ('Бесплатно', 'price:free'), ('До 500 ₽', 'price:500'), ('До 1000 ₽', 'price:1000')]))
+    await update_screen(callback.message, 'Выберите цену. Ограничение «до» применяется к минимальной цене билета; другие билеты могут стоить дороже.', reply_markup=choices([('Любая', 'price:all'), ('Бесплатно', 'price:free'), ('До 500 ₽', 'price:500'), ('До 1000 ₽', 'price:1000'), ('← Назад', 'nav:date'), ('⌂ Главное меню', 'menu:home')]))
 
 
 @router.callback_query(F.data.startswith('price:'), StateFilter(Flow.price))
@@ -209,16 +229,60 @@ async def show_page(message: Message, state: FSMContext, api: APIClient, page: i
         explanation = result.get('empty_explanation') or {}
         text = explanation.get('message') or 'Мероприятий не найдено.'
         suggestions = explanation.get('suggested_relaxations') or []
-        await display('\n'.join([text, *suggestions])[:4000], reply_markup=main_menu())
+        await display('\n'.join([text, *suggestions])[:4000], reply_markup=choices([('← Изменить фильтры', 'nav:price'), ('⌂ Главное меню', 'menu:home')]))
         return
     page = result['page']
     await state.update_data(page_ids=[str(event['id']) for event in items], page=page)
-    buttons = [(event['title'][:60], f"event:{event['id']}") for event in items]
+    buttons = [(event['title'][:60], f"event:{event['id']}") for event in items if len(f"event:{event['id']}".encode()) <= 64]
+    keyboard = choices(buttons, 2)
+    nav = []
     if page > 1:
-        buttons.append(('Назад', f'page:{page - 1}'))
+        nav.append(('Назад', f'page:{page - 1}'))
     if page * result['page_size'] < result['total']:
-        buttons.append(('Далее', f'page:{page + 1}'))
-    await display(f"Найдено: {result['total']}. Страница {page}.", reply_markup=choices(buttons))
+        nav.append(('Далее', f'page:{page + 1}'))
+    if nav:
+        keyboard.inline_keyboard.extend(choices(nav, 2).inline_keyboard)
+    keyboard.inline_keyboard.extend(choices([('← Изменить фильтры', 'nav:price'), ('⌂ Главное меню', 'menu:home')]).inline_keyboard)
+    await display(f"Найдено: {result['total']}. Страница {page}.", reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith('nav:'))
+async def navigation_callback(callback: CallbackQuery, state: FSMContext, api: APIClient) -> None:
+    await callback.answer()
+    target = callback.data.split(':', 1)[1]
+    current = await state.get_state()
+    data = await state.get_data()
+    subscription = current in (Flow.subscription_category.state, Flow.subscription_period.state)
+    allowed = {
+        'city': (Flow.category.state, Flow.subscription_category.state),
+        'category': (Flow.date.state, Flow.subscription_period.state),
+        'date': (Flow.price.state,),
+        'price': (None,),
+    }
+    if target not in allowed or current not in allowed[target]:
+        return
+    if target == 'city':
+        cities = data.get('cities', [])
+        await state.set_state(Flow.subscription_city if subscription else Flow.city)
+        await update_screen(callback.message, 'Выберите город:', reply_markup=paginated_cities(cities, data.get('city_page', 0), 'city', not subscription))
+        return
+    elif target == 'category':
+        items = [('Все категории', 'category:all')] + [(c['title_ru'], f'category:{i}') for i, c in enumerate(data.get('categories', [])[:90])]
+        items.append(('← Назад', 'nav:city'))
+        await state.set_state(Flow.subscription_category if subscription else Flow.category)
+        text = 'Выберите категорию:'
+    elif target == 'date':
+        items = [('Любая', 'date:all'), ('Сегодня', 'date:today'), ('Завтра', 'date:tomorrow'), ('Выходные', 'date:weekend'), ('Неделя', 'date:week'), ('← Назад', 'nav:category')]
+        await state.set_state(Flow.date)
+        text = 'Выберите дату (UTC+5). «Выходные» — ближайшие суббота и воскресенье; «Неделя» — сегодня и следующие 7 дней.'
+    else:
+        if 'filters' not in data:
+            return
+        items = [('Любая', 'price:all'), ('Бесплатно', 'price:free'), ('До 500 ₽', 'price:500'), ('До 1000 ₽', 'price:1000'), ('← Назад', 'nav:date')]
+        await state.set_state(Flow.price)
+        text = 'Выберите цену. Ограничение «до» применяется к минимальной цене билета; другие билеты могут стоить дороже.'
+    items.append(('⌂ Главное меню', 'menu:home'))
+    await update_screen(callback.message, text, reply_markup=choices(items))
 
 
 @router.callback_query(F.data.startswith('page:'))
@@ -226,6 +290,8 @@ async def page_callback(callback: CallbackQuery, state: FSMContext, api: APIClie
     await callback.answer()
     value = callback.data.split(':', 1)[1]
     data = await state.get_data()
+    if await state.get_state() is not None:
+        return
     if value.isdecimal() and abs(int(value) - data.get('page', 0)) <= 1 and int(value) >= 1:
         await show_page(callback.message, state, api, int(value), edit=True)
 
@@ -234,6 +300,8 @@ async def page_callback(callback: CallbackQuery, state: FSMContext, api: APIClie
 async def event_callback(callback: CallbackQuery, state: FSMContext, api: APIClient) -> None:
     await callback.answer()
     event_id = callback.data.split(':', 1)[1]
+    if await state.get_state() is not None:
+        return
     data = await state.get_data()
     if event_id not in data.get('page_ids', []):
         await update_screen(callback.message, 'Эта страница устарела. Начните поиск заново: /catalog')
@@ -367,14 +435,9 @@ async def send_chat(message: Message, state: FSMContext, api: APIClient, payload
         if not cities:
             await message.answer('Сейчас не удалось получить список городов. Попробуй позже.')
             return
-        previous_city = (await state.get_data()).get('last_catalog_city')
-        await state.update_data(chat_pending_message=payload['message'], chat_cities=cities)
+        await state.update_data(chat_pending_message=payload['message'], chat_cities=cities, city_page=0)
         await state.set_state(Flow.chat_city)
-        keyboard = []
-        if previous_city in cities:
-            keyboard.append((f'📍 {previous_city} (из прошлого поиска)', f"chatcity:{cities.index(previous_city)}"))
-        keyboard.extend((name, f'chatcity:{i}') for i, name in enumerate(cities[:90]) if name != previous_city)
-        await message.answer('В каком городе ищем? Выбери из списка — тогда покажу подходящие события.', reply_markup=choices(keyboard, 2))
+        await message.answer('В каком городе ищем? Выбери из списка — тогда покажу подходящие события.', reply_markup=paginated_cities(cities, 0, 'chatcity'))
         return
     text = result.get('reply_text') or ''
     for part in (result.get('clarifying_question'),):
@@ -395,7 +458,7 @@ async def chat_city_callback(callback: CallbackQuery, state: FSMContext, api: AP
     data = await state.get_data()
     index = callback.data.split(':', 1)[1]
     cities = data.get('chat_cities', [])
-    if not index.isdecimal() or int(index) >= min(len(cities), 90):
+    if not index.isascii() or not index.isdecimal() or len(index) > 9 or int(index) >= len(cities):
         await update_screen(callback.message, 'Не удалось выбрать город. Попробуй /start.')
         return
     city = cities[int(index)]
@@ -435,7 +498,7 @@ async def menu_callback(callback: CallbackQuery, state: FSMContext, api: APIClie
         await update_screen(callback.message, 'Напиши, какое событие ищешь. Например: «Концерт в Уфе на выходных».', reply_markup=choices([('← Главное меню', 'menu:home')]))
     elif action == 'subscriptions':
         await state.clear()
-        await update_screen(callback.message, '🔔 Подписки\n\nВыбери действие:', reply_markup=subscriptions_menu())
+        await update_screen(callback.message, '🔔 Подписки\n\nРассылка уведомлений пока не работает. Управление подписками доступно.\n\nВыбери действие:', reply_markup=subscriptions_menu())
     elif action == 'subscribe':
         await state.clear()
         await show_city(callback.message, state, api, True, edit=True)
