@@ -190,6 +190,7 @@ class NormalizationService:
         if any(w in combined for w in ["стендап", "stand up", "standup"]):
             tags.append("стендап")
 
+
         # Спорт теги
         if any(w in combined for w in ["хоккей", "кхл", "салават юлаев", "шайб"]):
             tags.extend(["спорт", "хоккей"])
@@ -204,10 +205,22 @@ class NormalizationService:
         elif any(w in combined for w in ["спорт", "матч", "турнир", "чемпионат", "кубок"]):
             tags.append("спорт")
 
-        # Если явно передан валидный enum
-        for cat_enum in EventCategory:
-            if raw_cat_clean == cat_enum.value.lower():
-                return cat_enum, list(dict.fromkeys(tags))
+        if raw_category:
+            try:
+                return EventCategory(raw_category.strip().casefold()), tags
+            except ValueError:
+                declared = raw_category.casefold()
+                categories = {
+                    EventCategory.CONCERT: ("концерт", "музык"),
+                    EventCategory.THEATER: ("театр", "спектакл", "балет", "опера"),
+                    EventCategory.EXHIBITION: ("выставк", "экспозиц"),
+                    EventCategory.FESTIVAL: ("фестивал",),
+                    EventCategory.CINEMA: ("кино", "фильм"),
+                    EventCategory.EXCURSION: ("экскурси",),
+                }
+                for category, terms in categories.items():
+                    if any(term in declared for term in terms):
+                        return category, tags
 
         # Сопоставление по контенту
         if any(w in combined for w in ["кино", "фильм", "мультфильм", "кинопоказ", "cinema", "кинотеатр"]):
@@ -219,6 +232,7 @@ class NormalizationService:
             return EventCategory.THEATER, list(dict.fromkeys(tags))
         elif any(w in combined for w in ["выставк", "музей", "галере", "экспозици", "картин", "живопис"]):
             return EventCategory.EXHIBITION, list(dict.fromkeys(tags))
+
         elif any(w in combined for w in ["фестивал", "ярмарк", "праздник"]):
             return EventCategory.FESTIVAL, list(dict.fromkeys(tags))
         elif any(w in combined for w in ["экскурси", "поездк", "гид", "пешеходн"]):

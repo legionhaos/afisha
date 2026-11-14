@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import re
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -133,7 +134,20 @@ class ImportService:
         if replay_record is None:
             existing_raw = await self.raw_repo.get_by_hash(source_hash)
             if existing_raw:
-                report.updated_count += 1
+                if existing_raw.raw_payload != raw_row:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Данные источника изменились при том же ключе; требуется проверка модератора",
+                    ))
+                elif existing_raw.processed_event_id is None:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Источник уже сохранён, но ранее не прошёл обработку; используйте повторную нормализацию",
+                    ))
+                else:
+                    report.updated_count += 1
                 return
             raw_record = await self.raw_repo.save_raw_record(
                 source_type=SourceType.IMPORT,
@@ -143,7 +157,23 @@ class ImportService:
                 imported_by=actor_id,
             )
             if raw_record is None:
-                report.updated_count += 1
+                existing_raw = await self.raw_repo.get_by_hash(source_hash)
+                if existing_raw is None:
+                    raise RuntimeError("Не удалось прочитать ранее сохранённый источник")
+                if existing_raw.raw_payload != raw_row:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Данные источника изменились при том же ключе; требуется проверка модератора",
+                    ))
+                elif existing_raw.processed_event_id is None:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Источник уже сохранён, но ранее не прошёл обработку; используйте повторную нормализацию",
+                    ))
+                else:
+                    report.updated_count += 1
                 return
         else:
             raw_record = replay_record
@@ -188,7 +218,15 @@ class ImportService:
         text_price = next((raw_row[key] for key in ("price_text", "price", "cost")
                            if raw_row.get(key) is not None and str(raw_row[key]).strip()), None)
         if has_low and has_high:
-            price_min, price_max = int(low), int(high)
+            try:
+                bounds = [Decimal(str(value).strip()) for value in (low, high)]
+                if any(not value.is_finite() or value != value.to_integral_value() for value in bounds):
+                    raise ValueError
+                if any(value < 0 or value > 2_147_483_647 for value in bounds):
+                    raise ValueError
+                price_min, price_max = (int(value) for value in bounds)
+            except (InvalidOperation, ValueError):
+                raise ValueError("Цена должна быть целым числом рублей") from None
             if price_min < 0 or price_max < price_min:
                 raise ValueError("Некорректный диапазон цен")
             if explicitly_free and (price_min or price_max):
@@ -204,16 +242,20 @@ class ImportService:
             if text_price is None:
                 raise ValueError("Цена не указана")
             raw_price_text = str(text_price).strip().casefold()
+            # Normalize digit groups without merging separate price values.
+            raw_price_text = re.sub(r"(?<=\d)[   ](?=\d{3}(?:\D|$))", "", raw_price_text)
             if re.match(r"^-\s*\d", raw_price_text):
                 raise ValueError("Цена не может быть отрицательной")
             numbers = re.findall(r"\d+", raw_price_text)
             if re.search(r"\d[.,]\d", raw_price_text) or len(numbers) > 2:
                 raise ValueError("Некорректная цена")
+            if any(len(number.lstrip("0")) > 10 for number in numbers):
+                raise ValueError("Цена превышает допустимый диапазон")
             if len(numbers) == 1 and re.search(r"\b(?:от|до)\s*\d", raw_price_text):
                 raise ValueError("Указана только одна граница цены")
             if len(numbers) == 2 and int(numbers[0]) > int(numbers[1]):
                 raise ValueError("Минимальная цена больше максимальной")
-            price_min, price_max, is_free = self.norm_service.parse_price_text(text_price)
+            price_min, price_max, is_free = self.norm_service.parse_price_text(raw_price_text)
             if numbers and is_free and any(int(number) != 0 for number in numbers):
                 raise ValueError("Цена противоречит бесплатному входу")
             if explicitly_paid and is_free:
@@ -233,8 +275,10 @@ class ImportService:
         category, auto_tags = self.norm_service.normalize_category(str(raw_category) if raw_category else None, title, description)
         existing_tags = raw_row.get("tags") or []
         if isinstance(existing_tags, str):
-            existing_tags = [t.strip() for t in existing_tags.split(",") if t.strip()]
-        tags = list(set(existing_tags + auto_tags))
+            existing_tags = existing_tags.split(",")
+        if not isinstance(existing_tags, list) or any(not isinstance(tag, str) for tag in existing_tags):
+            raise ValueError("Теги должны быть списком строк")
+        tags = list(dict.fromkeys([*(tag.strip() for tag in existing_tags if tag.strip()), *auto_tags]))
 
         # 4. Формирование dedup_key
         dedup_key = self.dedup_service.build_dedup_key(
@@ -248,6 +292,32 @@ class ImportService:
         if date_end is not None and date_end < date_start:
             raise ValueError("Дата окончания раньше даты начала")
 
+        coordinates: dict[str, Decimal | None] = {}
+        for field, bound in (("lat", 90), ("lon", 180)):
+            value = raw_row.get(field)
+            if value is None or str(value).strip() == "":
+                coordinates[field] = None
+                continue
+            try:
+                number = Decimal(str(value).strip().replace(",", "."))
+                if not number.is_finite() or abs(number) > bound:
+                    raise ValueError
+            except (InvalidOperation, ValueError):
+                raise ValueError(f"Некорректная координата {field}") from None
+            coordinates[field] = number
+        duration = raw_row.get("duration_min")
+        if duration is not None and str(duration).strip() != "":
+            duration_text = str(duration).strip()
+            if isinstance(duration, bool) or not duration_text.isascii() or not duration_text.isdigit():
+                raise ValueError("Некорректная продолжительность мероприятия")
+            if len(duration_text.lstrip("0")) > 10:
+                raise ValueError("Продолжительность вне допустимого диапазона")
+            duration = int(duration_text.lstrip("0") or "0")
+            if not 0 < duration <= 2_147_483_647:
+                raise ValueError("Продолжительность вне допустимого диапазона")
+        else:
+            duration = None
+
         # 5. Оценка уверенности и отправка на модерацию при необходимости
         event_dict_payload: dict[str, Any] = {
             "title": title,
@@ -256,12 +326,12 @@ class ImportService:
             "tags": tags,
             "date_start": date_start,
             "date_end": date_end,
-            "duration_min": int(raw_row.get("duration_min")) if raw_row.get("duration_min") else None,
+            "duration_min": duration,
             "city": resolved_city,
             "venue": venue,
             "address": address,
-            "lat": float(raw_row["lat"]) if raw_row.get("lat") else None,
-            "lon": float(raw_row["lon"]) if raw_row.get("lon") else None,
+            "lat": coordinates["lat"],
+            "lon": coordinates["lon"],
             "description": description,
             "price_min": price_min,
             "price_max": price_max,
@@ -287,12 +357,10 @@ class ImportService:
         event_dict_payload["dispute_reason"] = dispute_reason
 
         # Статус публикации (с корректной фиксацией отмененных мероприятий)
-        raw_status = str(raw_row.get("status") or "").strip().lower()
-        if (
-            raw_status in ("cancelled", "отменено", "отменен", "canceled")
-            or "отменен" in raw_title_str.lower()
-            or "отменено" in raw_title_str.lower()
-        ):
+        raw_status = str(raw_row.get("status") or "").strip().casefold().replace("ё", "е")
+        title_status = raw_title_str.casefold().replace("ё", "е")
+        cancelled_marker = re.search(r"[\(\[]\s*(?:отменен|отменено|отменена)\s*[\)\]]", title_status)
+        if raw_status in ("cancelled", "отменено", "отменен", "отменена", "canceled") or cancelled_marker:
             event_dict_payload["status"] = EventStatus.CANCELLED
         elif is_disputed or raw_status == EventStatus.DRAFT.value:
             event_dict_payload["status"] = EventStatus.DRAFT
@@ -302,9 +370,12 @@ class ImportService:
         else:
             event_dict_payload["status"] = EventStatus.PUBLISHED
 
-        # 6. Вычисление эмбеддинга
-        embedding = await self.emb_service.generate_embedding(f"{title} {description}")
-        event_dict_payload["embedding"] = embedding
+        # Безопаснее не передавать неподтверждённое описание провайдеру
+        # эмбеддингов: внешние данные могут содержать инструкции.
+        if event_dict_payload["is_disputed"] or event_dict_payload["status"] != EventStatus.PUBLISHED:
+            event_dict_payload["embedding"] = None
+        else:
+            event_dict_payload["embedding"] = await self.emb_service.generate_embedding(f"{title} {description}")
 
         # 7. Идемпотентное сохранение / дедупликация
         if replay_record is not None and raw_record.processed_event_id is not None:

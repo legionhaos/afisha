@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,7 @@ class RawEventRecord(Base):
     Позволяет переигрывать нормализацию без повторного сбора с внешних сайтов.
     """
     __tablename__ = "raw_event_records"
+    __table_args__ = (Index("ix_raw_event_records_replay_cursor", "created_at", "id"),)
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

@@ -52,10 +52,14 @@ class EmbeddingService:
 
         try:
             vector = await llm_circuit_breaker.call(_call_embeddings)
-            if len(vector) != 1536 or any(not math.isfinite(float(value)) for value in vector):
+            if len(vector) != 1536:
                 logger.warning("embedding_generation_invalid_vector")
                 return None
-            return [float(value) for value in vector]
+            values = [float(value) for value in vector]
+            if any(not math.isfinite(value) for value in values) or not any(values):
+                logger.warning("embedding_generation_invalid_vector")
+                return None
+            return values
         except (CircuitOpenError, TimeoutError) as ce:
             logger.warning("embedding_generation_degraded", reason=str(ce))
             return None

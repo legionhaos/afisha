@@ -13,6 +13,7 @@ from app.schemas.event import EventSearchFilterDTO
 from app.schemas.import_mod import ImportReportDTO
 from app.services.deduplication_service import DeduplicationService
 from app.services.import_service import ImportService
+from app.services.embedding_service import EmbeddingService
 from app.services.normalization_service import NormalizationService
 
 
@@ -49,12 +50,56 @@ def test_invalid_import_file_is_rejected(filename, content):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("price", ["до 1200", "от 300", "неизвестно", "-500", "500.50", "900-300", "бесплатно 500"])
+@pytest.mark.parametrize("price", ["до 1200", "от 300", "неизвестно", "-500", "500.50", "900-300", "бесплатно 500", "9" * 5000])
 async def test_incomplete_prices_are_not_published(price):
     svc = service()
     report = await svc.import_file(__import__("json").dumps([payload(price=price)], ensure_ascii=False).encode(), "events.json", "test", "request")
     assert report.rejected_count == 1
     svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("low,high", [(500.9, 800), (500, 800.5), (True, 800), ("NaN", 800), ("Infinity", 800), ("1e1000000", "1e1000000")])
+async def test_fractional_and_invalid_price_bounds_are_rejected(low, high):
+    svc = service()
+    report = await svc.import_file(__import__("json").dumps([payload(price_min=low, price_max=high)], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_changed_source_payload_is_reported_not_silently_skipped():
+    svc = service()
+    svc.raw_repo.get_by_hash.return_value = SimpleNamespace(processed_event_id=uuid4(), raw_payload=payload(price="500"))
+    changed = payload(price="900")
+    report = await svc.import_file(__import__("json").dumps([changed], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1 and report.updated_count == 0
+    assert "изменились" in report.errors[0].reason
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_retry_of_rejected_source_is_not_reported_as_updated():
+    svc = service()
+    svc.raw_repo.get_by_hash.return_value = SimpleNamespace(processed_event_id=None, raw_payload=payload())
+    report = await svc.import_file(__import__("json").dumps([payload()], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1 and report.updated_count == 0
+    assert "повторную нормализацию" in report.errors[0].reason
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [
+    {"status": "отменён"}, {"status": "отменена"}, {"title": "Тестовый концерт [ОТМЕНЁН]"},
+])
+async def test_cancelled_markers_include_yo_and_gender(extra):
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(**extra), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert data["status"] == EventStatus.CANCELLED
+    svc.emb_service.generate_embedding.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -68,6 +113,65 @@ async def test_crawler_unverified_records_remain_drafts(extra):
     assert data["status"] == EventStatus.DRAFT
     assert data["is_disputed"] is True
     assert report.flagged_for_moderation_count == 1
+    svc.emb_service.generate_embedding.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [
+    {"lat": "91"}, {"lon": "181"}, {"lat": "NaN"},
+    {"duration_min": -10}, {"duration_min": 0}, {"duration_min": "1.5"},
+    {"duration_min": "9" * 5000}, {"duration_min": "²"},
+])
+async def test_invalid_coordinates_and_duration_are_rejected(extra):
+    svc = service()
+    report = await svc.import_file(__import__("json").dumps([payload(**extra)], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tags", [[{"bad": "tag"}], [1], {"tag": "value"}])
+async def test_invalid_tags_are_reported_without_publishing(tags):
+    svc = service()
+    report = await svc.import_file(__import__("json").dumps([payload(tags=tags)], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tags_are_trimmed_and_keep_source_order():
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(tags=["  первый ", "второй", "первый", " "]), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert data["tags"][:2] == ["первый", "второй"]
+    assert data["tags"].count("первый") == 1
+
+
+@pytest.mark.asyncio
+async def test_zero_coordinates_are_preserved():
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(lat=0, lon=0), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert data["lat"] == 0 and data["lon"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("price,expected", [
+    ("1 500 руб", (1500, 1500)),
+    ("от 1 500 до 2 000 ₽", (1500, 2000)),
+    ("1 500–2 000 ₽", (1500, 2000)),
+])
+async def test_formatted_prices_keep_thousands(price, expected):
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(price=price), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert (data["price_min"], data["price_max"]) == expected
 
 
 @pytest.mark.asyncio
@@ -137,6 +241,31 @@ def test_deduplication_preserves_existing_organizer_link():
     assert merged["org_link"] == "https://example.org/original"
 
 
+@pytest.mark.parametrize("raw,title,description,expected", [
+    ("theater", "Музыкальная комедия", "Музыка и песни", EventCategory.THEATER),
+    ("concert", "Концерт", "В театре", EventCategory.CONCERT),
+    ("выставка", "Концерт в музее", "Музыка", EventCategory.EXHIBITION),
+    ("festival", "Фестиваль", "Концерты", EventCategory.FESTIVAL),
+])
+def test_explicit_category_takes_precedence(raw, title, description, expected):
+    category, _ = NormalizationService().normalize_category(raw, title, description)
+    assert category == expected
+
+
+@pytest.mark.asyncio
+async def test_zero_embedding_falls_back_to_text(monkeypatch):
+    import importlib
+
+    module = importlib.import_module("app.services.embedding_service")
+    settings = SimpleNamespace(
+        EMBEDDING_API_KEY=SimpleNamespace(get_secret_value=lambda: "test-key"),
+        LLM_API_KEY=SimpleNamespace(get_secret_value=lambda: "test-key"),
+    )
+    svc = EmbeddingService(settings=settings)
+    monkeypatch.setattr(module.llm_circuit_breaker, "call", AsyncMock(return_value=[0.0] * 1536))
+    assert await svc.generate_embedding("концерт") is None
+
+
 def test_age_is_not_inferred_from_arbitrary_description_numbers():
     norm = NormalizationService()
     assert norm.normalize_age_limit(None, "Концерт начинается в 19:00, билеты от 500 рублей") == 0
@@ -145,6 +274,35 @@ def test_age_is_not_inferred_from_arbitrary_description_numbers():
         norm.normalize_age_limit("неизвестно")
     with pytest.raises(ValueError):
         norm.normalize_age_limit(-1)
+
+
+@pytest.mark.asyncio
+async def test_text_search_candidate_gate_includes_trigram_matching():
+    session = AsyncMock()
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    rows_result = MagicMock()
+    rows_result.scalars.return_value.all.return_value = []
+    session.execute.side_effect = [count_result, rows_result]
+    await EventRepository(session).hybrid_search(EventSearchFilterDTO(query_text="концерт"))
+    sql = str(session.execute.await_args_list[0].args[0].compile(dialect=postgresql.dialect()))
+    assert "events.normalized_title %%" in sql
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_uses_same_topic_gate_as_search():
+    session = AsyncMock()
+    row = MagicMock()
+    row._mapping = {"price": 0}
+    result = MagicMock()
+    result.one.return_value = row
+    session.execute.return_value = result
+    await EventRepository(session).diagnose_blocking_constraints(
+        EventSearchFilterDTO(query_text="хоккей", price_max=100)
+    )
+    sql = str(session.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "plainto_tsquery" in sql and "websearch_to_tsquery" not in sql
+    assert "events.normalized_title %%" in sql
 
 
 @pytest.mark.asyncio
@@ -161,21 +319,26 @@ async def test_similar_events_require_category_or_close_vector():
 
 
 @pytest.mark.asyncio
-async def test_replay_pagination_uses_stable_timestamp_and_id_cursor():
+async def test_replay_streams_one_stable_statement_and_closes_cursor():
     session = AsyncMock()
     timestamp = datetime(2027, 1, 1, tzinfo=timezone.utc)
     records = [SimpleNamespace(created_at=timestamp, id=uuid4()) for _ in range(3)]
-    responses = []
-    for batch in (records[:2], records[2:], []):
-        result = MagicMock()
-        result.scalars.return_value.all.return_value = batch
-        responses.append(result)
-    session.execute.side_effect = responses
+
+    async def partitions(size):
+        assert size == 2
+        yield records[:2]
+        yield records[2:]
+
+    result = MagicMock()
+    result.partitions.side_effect = partitions
+    result.close = AsyncMock()
+    session.stream_scalars.return_value = result
     batches = [batch async for batch in RawRecordRepository(session).list_all_for_replay(batch_size=2)]
     assert batches == [records[:2], records[2:]]
-    sql = str(session.execute.await_args_list[1].args[0].compile(dialect=postgresql.dialect()))
-    assert "raw_event_records.created_at, raw_event_records.id" in sql
+    sql = str(session.stream_scalars.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "raw_event_records.created_at ASC, raw_event_records.id ASC" in sql
     assert " OFFSET " not in sql
+    result.close.assert_awaited_once()
 
 
 def test_hard_duration_filter_excludes_unknown_duration():

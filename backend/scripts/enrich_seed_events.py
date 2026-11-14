@@ -400,90 +400,9 @@ def generate_sports_events() -> list[dict]:
 
 
 async def main():
-    print("=" * 60)
-    print("🎬 Афиша Башкортостана: Обогащение кино и спортом")
-    print("=" * 60)
-
-    # 1. Загрузка существующих сидов
-    seed_path = BASE_DIR / "data" / "seed_events.json"
-    existing_events = []
-    if seed_path.exists():
-        with open(seed_path, "r", encoding="utf-8") as f:
-            existing_events = json.load(f)
-
-    print(f"📦 Исходных мероприятий в seed_events.json: {len(existing_events)}")
-
-    # 2. Генерация кино и спорта
-    cinema_events = generate_cinema_events()
-    sports_events = generate_sports_events()
-    print(f"🍿 Сгенерировано киносеансов: {len(cinema_events)}")
-    print(f"🏒 Сгенерировано спортивных матчей: {len(sports_events)}")
-
-    # 3. Объединение с дедупликацией по source_url
-    combined_dict = {}
-    for ev in existing_events:
-        combined_dict[ev["source_url"]] = ev
-    for ev in sports_events:
-        combined_dict[ev["source_url"]] = ev
-    for ev in cinema_events:
-        combined_dict[ev["source_url"]] = ev
-
-    all_events = list(combined_dict.values())
-    print(f"✨ Итого уникальных мероприятий для сидинга: {len(all_events)}")
-
-    # 4. Сохранение в seed_events.json
-    with open(seed_path, "w", encoding="utf-8") as f:
-        json.dump(all_events, f, ensure_ascii=False, indent=2)
-    print(f"💾 Файл {seed_path} успешно обновлен!")
-
-    # 5. Импорт в PostgreSQL через ImportService
-    print("\n🚀 Подключение к PostgreSQL и импорт...")
-    engine = create_async_engine(settings.DATABASE_URL, echo=False)
-    session_maker = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-
-    norm_service = NormalizationService()
-    dedup_service = DeduplicationService()
-    emb_service = EmbeddingService()
-
-    async with session_maker() as session:
-        event_repo = EventRepository(session)
-        raw_repo = RawRecordRepository(session)
-        dict_repo = DictionaryRepository(session)
-        audit_repo = AuditTraceRepository(session)
-
-        # Гарантируем города
-        from app.services.crawler_service import BASHKORTOSTAN_CITIES
-        for cname in BASHKORTOSTAN_CITIES:
-            await dict_repo.upsert_city(name=cname, normalized_name=cname.lower())
-        await session.commit()
-
-        import_service = ImportService(
-            event_repo=event_repo,
-            raw_repo=raw_repo,
-            dict_repo=dict_repo,
-            audit_repo=audit_repo,
-            norm_service=norm_service,
-            dedup_service=dedup_service,
-            emb_service=emb_service,
-        )
-
-        file_bytes = json.dumps(all_events, ensure_ascii=False).encode("utf-8")
-        report = await import_service.import_file(
-            file_bytes=file_bytes,
-            filename="seed_events.json",
-            actor_id="enrich_seeder",
-            request_id="enrich_cinema_sports",
-        )
-        await session.commit()
-
-        print("\n📊 РЕЗУЛЬТАТЫ ИМПОРТА В БД:")
-        print(f"  • Получено записей: {report.total_received}")
-        print(f"  • Добавлено новых: {report.added_count}")
-        print(f"  • Объединено дубликатов: {report.deduplicated_merged_count}")
-        print(f"  • Отклонено: {report.rejected_count}")
-
-    await engine.dispose()
-    print("\n🎉 Все мероприятия успешно синхронизированы в БД!")
+    raise RuntimeError(
+        "Генерация и публикация расписаний отключена: даты, цены и ссылки не подтверждены источниками."
+    )
 
 
 if __name__ == "__main__":

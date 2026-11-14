@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,16 +54,14 @@ class RawRecordRepository:
         """Потоковая выгрузка сырых записей для переигрывания нормализации."""
         if batch_size < 1:
             raise ValueError("batch_size должен быть положительным")
-        cursor = None
-        while True:
-            stmt = (select(RawEventRecord)
-                    .order_by(RawEventRecord.created_at.asc(), RawEventRecord.id.asc())
-                    .limit(batch_size))
-            if cursor is not None:
-                stmt = stmt.where(tuple_(RawEventRecord.created_at, RawEventRecord.id) > tuple_(*cursor))
-            result = await self.session.execute(stmt)
-            batch = list(result.scalars().all())
-            if not batch:
-                break
-            cursor = (batch[-1].created_at, batch[-1].id)
-            yield batch
+        # A single server-side cursor uses one statement snapshot: records
+        # inserted during replay cannot change this run's population.
+        stmt = (select(RawEventRecord)
+                .order_by(RawEventRecord.created_at.asc(), RawEventRecord.id.asc())
+                .execution_options(yield_per=batch_size))
+        result = await self.session.stream_scalars(stmt)
+        try:
+            async for batch in result.partitions(batch_size):
+                yield list(batch)
+        finally:
+            await result.close()

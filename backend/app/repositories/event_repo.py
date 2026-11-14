@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -22,7 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.models.enums import EventCategory, EventStatus, ModerationReason, SourceType
 from app.models.event import Event, EventSource
 from app.schemas.event import EventSearchFilterDTO
-from app.services.normalization_service import YEKT_TZ
+YEKT_TZ = ZoneInfo("Asia/Yekaterinburg")
 
 
 class EventRepository:
@@ -105,6 +106,41 @@ class EventRepository:
 
         return clauses
 
+    @staticmethod
+    def _topic_filter(query: str) -> Any:
+        terms = [term.strip().lower() for term in query.split("|") if term.strip()]
+        topic_clauses = []
+        for term in terms:
+            ts_query = func.plainto_tsquery("russian", term)
+            clean_term = re.sub(r"[^a-zA-Zа-яА-Я0-9]", "", term)
+            if term in {"хоккей", "hockey"}:
+                topic_clauses.extend([
+                    func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)"),
+                    func.lower(Event.description).op("~*")(r"(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)"),
+                    Event.tags.contains(["хоккей"]),
+                ])
+            topic_clauses.extend([
+                Event.tsv.op("@@")(ts_query),
+                func.lower(Event.title).op("~*")(rf"(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)"),
+                func.lower(Event.description).op("~*")(rf"(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)"),
+                Event.tags.contains([term]),
+            ])
+            if term in {"кино", "фильм", "фильмы", "кинотеатр"}:
+                topic_clauses.extend([
+                    Event.category == EventCategory.CINEMA,
+                    func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])(кино|фильм)[[:alpha:]]*([^[:alnum:]]|$)"),
+                    Event.tags.contains(["кино"]),
+                ])
+            if term in {"футбол", "football"}:
+                topic_clauses.extend([
+                    func.lower(Event.title).op("~*")(r"(^|[^[:alnum:]])футбол[[:alpha:]]*([^[:alnum:]]|$)"),
+                    Event.tags.contains(["футбол"]),
+                ])
+            if clean_term:
+                topic_clauses.append(Event.tsv.op("@@")(func.to_tsquery("russian", f"{clean_term}:*")))
+        topic_clauses.append(Event.normalized_title.op("%")(query.casefold().replace("ё", "е")))
+        return or_(*topic_clauses)
+
     async def hybrid_search(
         self,
         filters: EventSearchFilterDTO,
@@ -115,41 +151,7 @@ class EventRepository:
 
         query_text = filters.query_text.strip() if filters.query_text else None
         if query_text:
-            # A lexical candidate gate keeps semantic ranking from returning events
-            # that do not contain the requested topic. FTS handles Russian inflection.
-            terms = [term.strip().lower() for term in query_text.split('|') if term.strip()]
-            topic_clauses = []
-            for term in terms:
-                ts_query = func.plainto_tsquery('russian', term)
-                clean_term = re.sub(r'[^a-zA-Zа-яА-Я0-9]', '', term)
-                if term in {'хоккей', 'hockey'}:
-                    topic_clauses.extend([
-                        func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
-                        func.lower(Event.description).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
-                        Event.tags.contains(['хоккей']),
-                    ])
-                if term in {'кино', 'фильм', 'фильмы', 'кинотеатр'}:
-                    topic_clauses.extend([
-                        Event.category == EventCategory.CINEMA,
-                        func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])(кино|фильм)[[:alpha:]]*([^[:alnum:]]|$)'),
-                        Event.tags.contains(['кино']),
-                    ])
-                if term in {'футбол', 'football'}:
-                    topic_clauses.extend([
-                        func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])футбол[[:alpha:]]*([^[:alnum:]]|$)'),
-                        Event.tags.contains(['футбол']),
-                    ])
-                topic_clauses.extend([
-                    Event.tsv.op('@@')(ts_query),
-                    func.lower(Event.title).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
-                    func.lower(Event.description).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
-                    Event.tags.contains([term]),
-                ])
-                if clean_term:
-                    prefix_ts = func.to_tsquery('russian', f"{clean_term}:*")
-                    topic_clauses.append(Event.tsv.op('@@')(prefix_ts))
-            if topic_clauses:
-                clauses.append(or_(*topic_clauses))
+            clauses.append(self._topic_filter(query_text))
 
         query = filters.query_text.strip() if filters.query_text else ""
         text_ranked = vector_ranked = None
@@ -212,11 +214,7 @@ class EventRepository:
             clauses = self._build_base_filters(filters, exclude=name)
             if filters.query_text and filters.query_text.strip():
                 query = filters.query_text.strip()
-                normalized = query.casefold().replace("ё", "е")
-                clauses.append(or_(
-                    Event.tsv.op("@@")(func.websearch_to_tsquery("russian", query)),
-                    Event.normalized_title.op("%")(normalized),
-                ))
+                clauses.append(self._topic_filter(query))
             expressions.append(func.count(Event.id).filter(and_(*clauses)).label(name))
         if not expressions:
             return ["По заданным параметрам нет запланированных событий."]
