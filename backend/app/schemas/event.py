@@ -12,6 +12,7 @@ from pydantic import (
 )
 
 from app.models.enums import EventCategory, EventStatus, ModerationReason, SourceType
+from app.core.address import normalize_address
 
 
 class EventSourceDTO(BaseModel):
@@ -38,6 +39,11 @@ class EventCardDTO(BaseModel):
     city: str = Field(..., description="Город проведения")
     venue: str = Field(..., description="Площадка проведения")
     address: str = Field(..., description="Точный адрес площадки")
+
+    @field_validator("address", mode="before")
+    @classmethod
+    def clean_address(cls, value: object) -> str:
+        return normalize_address(value)
     lat: Decimal | None = Field(default=None, description="Широта")
     lon: Decimal | None = Field(default=None, description="Долгота")
     description: str = Field(..., description="Полное описание мероприятия")

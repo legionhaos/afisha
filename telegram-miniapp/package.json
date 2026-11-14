@@ -1,0 +1,20 @@
+{
+  "name": "telegram-miniapp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "deploy": "npm run build && tgcloud push dist/"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@tgcloud/cli": "0.2.0",
+    "esbuild": "0.25.12",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  }
+}

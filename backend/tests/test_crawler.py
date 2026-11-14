@@ -13,6 +13,24 @@ from app.services.crawler_service import (
 )
 
 
+@pytest.mark.parametrize(("value", "expected"), [
+    ({"@type": "PostalAddress", "streetAddress": "г. Уфа, ул. 50 лет СССР, 36", "addressCountry": "RU"}, "г. Уфа, ул. 50 лет СССР, 36"),
+    ("{'@type': 'PostalAddress', 'streetAddress': 'г. Уфа, ул. 50 лет СССР, 36'}", "г. Уфа, ул. 50 лет СССР, 36"),
+    ('{"streetAddress": "ул. Ленина, 1", "addressLocality": "Уфа"}', "Уфа, ул. Ленина, 1"),
+    ("Уфа, ул. Ленина, 1", "Уфа, ул. Ленина, 1"),
+    ("{'@type': 'PostalAddress'}", ""),
+    ("{broken", ""),
+])
+def test_normalize_address(value, expected):
+    from app.core.address import normalize_address
+    assert normalize_address(value) == expected
+
+
+def test_event_card_normalizes_legacy_address():
+    from app.schemas.event import EventCardDTO
+    assert EventCardDTO.clean_address("{'streetAddress': 'г. Уфа, ул. 50 лет СССР, 36'}") == "г. Уфа, ул. 50 лет СССР, 36"
+
+
 def test_detect_bashkortostan_city():
     # Города Башкортостана
     city, is_bash = detect_bashkortostan_city("г. Стерлитамак, пр. Ленина 2", "ГДК Стерлитамак")
@@ -67,7 +85,7 @@ async def test_kassir_crawler_parses_json_ld():
                 "location": {
                     "@type": "Place",
                     "name": "Уфа-Арена",
-                    "address": "г. Уфа, ул. Ленина, 114",
+                    "address": {"@type": "PostalAddress", "streetAddress": "г. Уфа, ул. Ленина, 114"},
                 },
                 "offers": {
                     "@type": "Offer",
@@ -102,6 +120,7 @@ async def test_kassir_crawler_parses_json_ld():
     assert ev["title"] == "Концерт Земфиры"
     assert ev["city"] == "Уфа"
     assert ev["venue"] == "Уфа-Арена"
+    assert ev["address"] == "г. Уфа, ул. Ленина, 114"
     assert ev["price_min"] == 3500
     assert ev["status"] == EventStatus.PUBLISHED.value
     assert ev["date_start"] == "2026-11-20T19:00:00+05:00"

@@ -77,6 +77,7 @@ function formatPrice(isFree: boolean, min: number, max: number) {
 export default function MiniAppPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [selectedCity, setSelectedCity] = useState('Все');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [isFreeOnly, setIsFreeOnly] = useState(false);
@@ -106,6 +107,7 @@ export default function MiniAppPage() {
     let isMounted = true;
     async function loadEvents() {
       setLoading(true);
+      setLoadError(false);
       try {
         const params = new URLSearchParams({ page_size: '50' });
         if (selectedCity !== 'Все') params.set('city', selectedCity);
@@ -121,6 +123,7 @@ export default function MiniAppPage() {
         }
       } catch (err) {
         console.error('Error fetching events:', err);
+        if (isMounted) { setEvents([]); setLoadError(true); }
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -224,6 +227,11 @@ export default function MiniAppPage() {
         {loading ? (
           <div className="miniapp-empty">
             <p>Загрузка афиши…</p>
+          </div>
+        ) : loadError ? (
+          <div className="miniapp-empty">
+            <h3>Каталог временно недоступен</h3>
+            <p>Подключение к афише ещё не настроено или сервер недоступен. Попробуйте позже.</p>
           </div>
         ) : events.length === 0 ? (
           <div className="miniapp-empty">

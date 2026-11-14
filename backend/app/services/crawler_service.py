@@ -20,6 +20,7 @@ import structlog
 from app.models.enums import EventCategory, EventStatus, SourceType
 from app.services.import_service import ImportService
 from app.services.normalization_service import YEKT_TZ, NormalizationService
+from app.core.address import normalize_address
 
 logger = structlog.get_logger(__name__)
 
@@ -137,7 +138,7 @@ class KassirCrawler(BaseCrawler):
 
                         location = item.get("location") or {}
                         venue_name = str(location.get("name") or "Площадка мероприятия").strip() if isinstance(location, dict) else "Площадка"
-                        address = str(location.get("address") or f"г. Уфа, {venue_name}").strip() if isinstance(location, dict) else venue_name
+                        address = normalize_address(location.get("address")) if isinstance(location, dict) else ""
 
                         city, is_bash = detect_bashkortostan_city(address, venue_name)
                         if not is_bash:
@@ -377,7 +378,7 @@ class KassyCrawler(BaseCrawler):
 
                 location = data.get("location") or {}
                 venue_name = str(location.get("name") or "Площадка мероприятия").strip() if isinstance(location, dict) else "Площадка"
-                address = str(location.get("address") or f"г. Уфа, {venue_name}").strip() if isinstance(location, dict) else venue_name
+                address = normalize_address(location.get("address")) if isinstance(location, dict) else ""
 
                 city, is_bash = detect_bashkortostan_city(address, venue_name)
                 if not is_bash:
