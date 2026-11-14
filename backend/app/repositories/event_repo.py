@@ -142,7 +142,7 @@ class EventRepository:
             score = func.ts_rank(Event.tsv, tsquery) + similarity
             text_ranked = (
                 select(Event.id.label("id"), func.row_number().over(order_by=(score.desc(), Event.id)).label("rank"))
-                .where(*clauses, or_(Event.tsv.op("@@")(tsquery), Event.normalized_title.op("%")(normalized)))
+                .where(*clauses)
                 .cte("text_search")
             )
         if query_embedding is not None:
@@ -194,14 +194,7 @@ class EventRepository:
             clauses = self._build_base_filters(filters, exclude=name)
             if filters.query_text and filters.query_text.strip():
                 query = filters.query_text.strip()
-                normalized = query.casefold().replace("ё", "е")
                 clauses.append(self._topic_filter(query))
-                # Without an embedding, hybrid_search additionally requires a
-                # full-text or trigram match in its text ranking CTE.
-                clauses.append(or_(
-                    Event.tsv.op("@@")(func.websearch_to_tsquery("russian", query)),
-                    Event.normalized_title.op("%")(normalized),
-                ))
             expressions.append(func.count(Event.id).filter(and_(*clauses)).label(name))
         if not expressions:
             return ["По заданным параметрам нет запланированных событий."]

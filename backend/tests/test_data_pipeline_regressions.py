@@ -205,7 +205,7 @@ async def test_diagnostics_uses_same_topic_gate_as_search():
         EventSearchFilterDTO(query_text="хоккей", price_max=100)
     )
     sql = str(session.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
-    assert "plainto_tsquery" in sql and "websearch_to_tsquery" in sql
+    assert "plainto_tsquery" in sql and "websearch_to_tsquery" not in sql
     assert "events.normalized_title %%" in sql
 
 
