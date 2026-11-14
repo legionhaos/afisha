@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 import pytest
 from unittest.mock import AsyncMock
@@ -116,7 +117,7 @@ def test_deduplication_service_merge_fields():
 async def test_fallback_search_service_parsing():
     mock_catalog = AsyncMock()
     mock_dict = AsyncMock()
-    mock_dict.resolve_city_name.side_effect = lambda w: "Стерлитамак" if "стерлит" in w.lower() else None
+    mock_dict.get_all_cities.return_value = [SimpleNamespace(name="Стерлитамак")]
     mock_audit = AsyncMock()
 
     service = FallbackSearchService(mock_catalog, mock_dict, mock_audit)
