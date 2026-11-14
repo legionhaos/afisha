@@ -46,6 +46,7 @@ def test_missing_source_facts_are_not_fabricated():
     assert extract_price({"lowPrice": "300"}) == (None, None, None)
     assert extract_price({"price": "0"}) == (0, 0, True)
     assert extract_price({"price": "500.5"}) == (None, None, None)
+    assert extract_price({"price": "1e1000000"}) == (None, None, None)
     assert extract_address({"addressLocality": "Уфа", "streetAddress": "Ленина, 1"}) == "Уфа, Ленина, 1"
 
 

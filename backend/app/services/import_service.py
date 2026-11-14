@@ -249,6 +249,8 @@ class ImportService:
             numbers = re.findall(r"\d+", raw_price_text)
             if re.search(r"\d[.,]\d", raw_price_text) or len(numbers) > 2:
                 raise ValueError("Некорректная цена")
+            if any(len(number.lstrip("0")) > 10 for number in numbers):
+                raise ValueError("Цена превышает допустимый диапазон")
             if len(numbers) == 1 and re.search(r"\b(?:от|до)\s*\d", raw_price_text):
                 raise ValueError("Указана только одна граница цены")
             if len(numbers) == 2 and int(numbers[0]) > int(numbers[1]):

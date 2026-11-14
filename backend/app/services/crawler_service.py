@@ -90,7 +90,8 @@ def extract_price(offers: Any) -> tuple[int | None, int | None, bool | None]:
         return None, None, None
     try:
         a, b = Decimal(str(low)), Decimal(str(high))
-        if not a.is_finite() or not b.is_finite() or a < 0 or b < a or a != int(a) or b != int(b):
+        if (not a.is_finite() or not b.is_finite() or a < 0 or b < a
+                or b > 2_147_483_647 or a != a.to_integral_value() or b != b.to_integral_value()):
             return None, None, None
         return int(a), int(b), a == b == 0
     except (ValueError, TypeError, InvalidOperation, OverflowError):

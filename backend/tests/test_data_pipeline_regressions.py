@@ -50,7 +50,7 @@ def test_invalid_import_file_is_rejected(filename, content):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("price", ["до 1200", "от 300", "неизвестно", "-500", "500.50", "900-300", "бесплатно 500"])
+@pytest.mark.parametrize("price", ["до 1200", "от 300", "неизвестно", "-500", "500.50", "900-300", "бесплатно 500", "9" * 5000])
 async def test_incomplete_prices_are_not_published(price):
     svc = service()
     report = await svc.import_file(__import__("json").dumps([payload(price=price)], ensure_ascii=False).encode(), "events.json", "test", "request")
