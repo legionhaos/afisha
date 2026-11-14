@@ -92,6 +92,26 @@ async def test_invalid_coordinates_and_duration_are_rejected(extra):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tags", [[{"bad": "tag"}], [1], {"tag": "value"}])
+async def test_invalid_tags_are_reported_without_publishing(tags):
+    svc = service()
+    report = await svc.import_file(__import__("json").dumps([payload(tags=tags)], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tags_are_trimmed_and_keep_source_order():
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(tags=["  первый ", "второй", "первый", " "]), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert data["tags"][:2] == ["первый", "второй"]
+    assert data["tags"].count("первый") == 1
+
+
+@pytest.mark.asyncio
 async def test_zero_coordinates_are_preserved():
     svc = service()
     svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")

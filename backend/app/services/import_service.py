@@ -240,8 +240,10 @@ class ImportService:
         category, auto_tags = self.norm_service.normalize_category(str(raw_category) if raw_category else None, title, description)
         existing_tags = raw_row.get("tags") or []
         if isinstance(existing_tags, str):
-            existing_tags = [t.strip() for t in existing_tags.split(",") if t.strip()]
-        tags = list(set(existing_tags + auto_tags))
+            existing_tags = existing_tags.split(",")
+        if not isinstance(existing_tags, list) or any(not isinstance(tag, str) for tag in existing_tags):
+            raise ValueError("Теги должны быть списком строк")
+        tags = list(dict.fromkeys([*(tag.strip() for tag in existing_tags if tag.strip()), *auto_tags]))
 
         # 4. Формирование dedup_key
         dedup_key = self.dedup_service.build_dedup_key(
