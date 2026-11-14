@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import re
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -248,6 +249,29 @@ class ImportService:
         if date_end is not None and date_end < date_start:
             raise ValueError("Дата окончания раньше даты начала")
 
+        coordinates: dict[str, Decimal | None] = {}
+        for field, bound in (("lat", 90), ("lon", 180)):
+            value = raw_row.get(field)
+            if value is None or str(value).strip() == "":
+                coordinates[field] = None
+                continue
+            try:
+                number = Decimal(str(value).strip().replace(",", "."))
+                if not number.is_finite() or abs(number) > bound:
+                    raise ValueError
+            except (InvalidOperation, ValueError):
+                raise ValueError(f"Некорректная координата {field}") from None
+            coordinates[field] = number
+        duration = raw_row.get("duration_min")
+        if duration is not None and str(duration).strip() != "":
+            if isinstance(duration, bool) or not str(duration).strip().isdigit():
+                raise ValueError("Некорректная продолжительность мероприятия")
+            duration = int(duration)
+            if not 0 < duration <= 2_147_483_647:
+                raise ValueError("Продолжительность вне допустимого диапазона")
+        else:
+            duration = None
+
         # 5. Оценка уверенности и отправка на модерацию при необходимости
         event_dict_payload: dict[str, Any] = {
             "title": title,
@@ -256,12 +280,12 @@ class ImportService:
             "tags": tags,
             "date_start": date_start,
             "date_end": date_end,
-            "duration_min": int(raw_row.get("duration_min")) if raw_row.get("duration_min") else None,
+            "duration_min": duration,
             "city": resolved_city,
             "venue": venue,
             "address": address,
-            "lat": float(raw_row["lat"]) if raw_row.get("lat") else None,
-            "lon": float(raw_row["lon"]) if raw_row.get("lon") else None,
+            "lat": coordinates["lat"],
+            "lon": coordinates["lon"],
             "description": description,
             "price_min": price_min,
             "price_max": price_max,

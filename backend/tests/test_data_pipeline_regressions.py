@@ -71,6 +71,28 @@ async def test_crawler_unverified_records_remain_drafts(extra):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [
+    {"lat": "91"}, {"lon": "181"}, {"lat": "NaN"},
+    {"duration_min": -10}, {"duration_min": 0}, {"duration_min": "1.5"},
+])
+async def test_invalid_coordinates_and_duration_are_rejected(extra):
+    svc = service()
+    report = await svc.import_file(__import__("json").dumps([payload(**extra)], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_zero_coordinates_are_preserved():
+    svc = service()
+    svc.event_repo.create_or_update_event.return_value = (SimpleNamespace(id=uuid4()), "added")
+    report = ImportReportDTO()
+    await svc._process_single_row(payload(lat=0, lon=0), 1, "test", "request", report)
+    data = svc.event_repo.create_or_update_event.await_args.kwargs["event_data"]
+    assert data["lat"] == 0 and data["lon"] == 0
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("price", [0, "0", "0 рублей"])
 async def test_zero_price_remains_free(price):
     svc = service()
