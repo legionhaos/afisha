@@ -67,6 +67,16 @@ async def test_fractional_and_invalid_price_bounds_are_rejected(low, high):
 
 
 @pytest.mark.asyncio
+async def test_retry_of_rejected_source_is_not_reported_as_updated():
+    svc = service()
+    svc.raw_repo.get_by_hash.return_value = SimpleNamespace(processed_event_id=None)
+    report = await svc.import_file(__import__("json").dumps([payload()], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1 and report.updated_count == 0
+    assert "повторную нормализацию" in report.errors[0].reason
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("extra", [{"status": "draft"}, {"url_verified": False}])
 async def test_crawler_unverified_records_remain_drafts(extra):
     svc = service()

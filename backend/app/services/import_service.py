@@ -134,7 +134,14 @@ class ImportService:
         if replay_record is None:
             existing_raw = await self.raw_repo.get_by_hash(source_hash)
             if existing_raw:
-                report.updated_count += 1
+                if existing_raw.processed_event_id is None:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Источник уже сохранён, но ранее не прошёл обработку; используйте повторную нормализацию",
+                    ))
+                else:
+                    report.updated_count += 1
                 return
             raw_record = await self.raw_repo.save_raw_record(
                 source_type=SourceType.IMPORT,
@@ -144,7 +151,17 @@ class ImportService:
                 imported_by=actor_id,
             )
             if raw_record is None:
-                report.updated_count += 1
+                existing_raw = await self.raw_repo.get_by_hash(source_hash)
+                if existing_raw is None:
+                    raise RuntimeError("Не удалось прочитать ранее сохранённый источник")
+                if existing_raw.processed_event_id is None:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Источник уже сохранён, но ранее не прошёл обработку; используйте повторную нормализацию",
+                    ))
+                else:
+                    report.updated_count += 1
                 return
         else:
             raw_record = replay_record
