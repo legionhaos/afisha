@@ -176,7 +176,8 @@ class FallbackSearchService:
         await self.audit_repo.save_agent_trace({
             "id": trace_id,
             "request_id": request_id,
-            "thread_id": thread_id,
+            "thread_id": f"{user_identifier}::{thread_id}"[:128],
+            "user_identifier": user_identifier,
             "user_query": message,
             "plan_steps": ["fallback_deterministic_parse", "catalog_search"],
             "tool_calls": [{"tool": "deterministic_search", "args": filters.model_dump(mode="json")}],

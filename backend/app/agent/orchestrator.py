@@ -200,9 +200,13 @@ class CulturalAgentOrchestrator:
         trace_id = uuid4()
         trace = None
         if self.audit_repo and hasattr(self.audit_repo, "save_agent_trace"):
+            user_id = state.get('user_identifier', 'unknown')
+            raw_thread_id = state.get('thread_id', 'thread')
+            stored_thread_id = f"{user_id}::{raw_thread_id}" if not raw_thread_id.startswith(f"{user_id}::") else raw_thread_id
             res = self.audit_repo.save_agent_trace({
                 'request_id': state.get('request_id', 'req'),
-                'thread_id': state.get('thread_id', 'thread'),
+                'thread_id': stored_thread_id[:128],
+                'user_identifier': user_id,
                 'user_query': next((m.content for m in reversed(state.get('messages', [])) if isinstance(m, HumanMessage)), ''),
                 'plan_steps': state.get('plan_steps', []),
                 'tool_calls': state.get('tool_Executions', state.get('tool_executions', [])),
@@ -554,8 +558,9 @@ class CulturalAgentOrchestrator:
         start_time = time.monotonic()
         trace_id = uuid4()
 
-        scope = hashlib.sha256(f'{req.user_identifier}\0{req.thread_id}'.encode()).hexdigest()
-        if hasattr(self, 'tools_factory') and self.tools_factory and getattr(self.tools_factory, 'user_identifier', None) != req.user_identifier:
+        effective_user = telegram_user or req.user_identifier
+        scope = hashlib.sha256(f'{effective_user}\0{req.thread_id}'.encode()).hexdigest()
+        if hasattr(self, 'tools_factory') and self.tools_factory and getattr(self.tools_factory, 'user_identifier', None) != effective_user:
             raise PermissionError('Tool factory does not belong to the requesting user')
 
         allowed, _ = self.guardrails.check_user_input(req.message)
@@ -563,7 +568,7 @@ class CulturalAgentOrchestrator:
         state = {
             'messages': [HumanMessage(content=safe_message)],
             'thread_id': req.thread_id,
-            'user_identifier': req.user_identifier,
+            'user_identifier': effective_user,
             'request_id': request_id,
             'step_count': 0,
             'tool_call_count': 0,
@@ -591,7 +596,7 @@ class CulturalAgentOrchestrator:
             graph = self.graph
         else:
             graph = self.build_graph(
-                user_identifier=req.user_identifier,
+                user_identifier=effective_user,
                 confirmed_action_id=getattr(req, "confirmed_action_id", getattr(req, "confirm_action_id", None)),
             )
 

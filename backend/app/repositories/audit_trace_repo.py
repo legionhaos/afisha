@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_trace import AgentTrace, AuditLog
@@ -60,10 +60,17 @@ class AuditTraceRepository:
 
     async def save_agent_trace(self, trace_data: dict[str, Any]) -> AgentTrace:
         """Сохраняет полную трассу шагов рассуждения и инструментов агента."""
+        user_id = trace_data.get("user_identifier")
+        raw_thread = str(trace_data.get("thread_id") or "thread")
+        if user_id and not raw_thread.startswith(f"{user_id}::"):
+            stored_thread = f"{user_id}::{raw_thread}"[:128]
+        else:
+            stored_thread = raw_thread[:128]
+
         trace = AgentTrace(
             id=trace_data.get("id") or uuid4(),
             request_id=trace_data["request_id"],
-            thread_id=trace_data["thread_id"],
+            thread_id=stored_thread,
             user_query=trace_data["user_query"],
             plan_steps=trace_data.get("plan_steps", []),
             tool_calls=trace_data.get("tool_calls", []),
@@ -90,7 +97,10 @@ class AuditTraceRepository:
             hour=0, minute=0, second=0, microsecond=0
         )
         stmt = select(func.coalesce(func.sum(AgentTrace.estimated_cost_rub), Decimal("0.0000"))).where(
-            AgentTrace.thread_id.like(f"%{user_thread_prefix}%"),
+            or_(
+                AgentTrace.thread_id.like(f"{user_thread_prefix}::%"),
+                AgentTrace.thread_id.like(f"%{user_thread_prefix}%"),
+            ),
             AgentTrace.created_at >= today_start,
         )
         result = await self.session.execute(stmt)
