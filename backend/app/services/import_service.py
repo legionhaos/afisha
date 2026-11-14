@@ -307,9 +307,12 @@ class ImportService:
             coordinates[field] = number
         duration = raw_row.get("duration_min")
         if duration is not None and str(duration).strip() != "":
-            if isinstance(duration, bool) or not str(duration).strip().isdigit():
+            duration_text = str(duration).strip()
+            if isinstance(duration, bool) or not duration_text.isascii() or not duration_text.isdigit():
                 raise ValueError("Некорректная продолжительность мероприятия")
-            duration = int(duration)
+            if len(duration_text.lstrip("0")) > 10:
+                raise ValueError("Продолжительность вне допустимого диапазона")
+            duration = int(duration_text.lstrip("0") or "0")
             if not 0 < duration <= 2_147_483_647:
                 raise ValueError("Продолжительность вне допустимого диапазона")
         else:

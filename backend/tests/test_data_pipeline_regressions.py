@@ -105,6 +105,7 @@ async def test_crawler_unverified_records_remain_drafts(extra):
 @pytest.mark.parametrize("extra", [
     {"lat": "91"}, {"lon": "181"}, {"lat": "NaN"},
     {"duration_min": -10}, {"duration_min": 0}, {"duration_min": "1.5"},
+    {"duration_min": "9" * 5000}, {"duration_min": "²"},
 ])
 async def test_invalid_coordinates_and_duration_are_rejected(extra):
     svc = service()
