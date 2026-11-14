@@ -195,6 +195,6 @@ class FallbackSearchService:
             recommendations=recommendations,
             is_fallback_mode=True,
             fallback_notice="Работает упрощённый поиск без ИИ.",
-            clarifying_question=('В каком городе ищем события?' if needs_city and not unsupported_sport else None),
+            clarifying_question=('В каком городе ищем события?' if needs_city else None),
             data_grounded_badge="Ответ построен исключительно по проверенным данным сервиса",
         )
