@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     LLM_API_KEY: SecretStr = SecretStr("mock-key")
     LLM_MODEL_NAME: str = "gpt-4o-mini"
     EMBEDDING_MODEL_NAME: str = "text-embedding-3-small"
+    EMBEDDING_API_KEY: SecretStr = SecretStr("")
+    EMBEDDING_BASE_URL: str = ""
+    EMBEDDING_DIMENSIONS: int = 1536
 
     # Operational limits strictly from contract
     LLM_TIMEOUT_SEC: float = Field(

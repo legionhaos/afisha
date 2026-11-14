@@ -22,6 +22,7 @@ from app.services.catalog_service import CatalogService
 from app.services.embedding_service import embedding_service
 from app.services.fallback_search_service import FallbackSearchService
 from app.services.import_service import ImportService
+from app.services.crawler_service import CrawlerService
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -122,6 +123,12 @@ def get_import_service(
         audit_repo=audit_repo,
         emb_service=embedding_service,
     )
+
+
+def get_crawler_service(
+    import_service: Annotated[ImportService, Depends(get_import_service)],
+) -> CrawlerService:
+    return CrawlerService(import_service=import_service)
 
 
 def get_agent_orchestrator(

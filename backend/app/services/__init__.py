@@ -4,6 +4,7 @@ from app.services.embedding_service import EmbeddingService, embedding_service
 from app.services.import_service import ImportService
 from app.services.catalog_service import CatalogService
 from app.services.fallback_search_service import FallbackSearchService
+from app.services.crawler_service import CrawlerService, KassirCrawler, RusdramCrawler, KassyCrawler
 
 __all__ = [
     "NormalizationService",
@@ -15,4 +16,9 @@ __all__ = [
     "ImportService",
     "CatalogService",
     "FallbackSearchService",
+    "CrawlerService",
+    "KassirCrawler",
+    "RusdramCrawler",
+    "KassyCrawler",
 ]
+

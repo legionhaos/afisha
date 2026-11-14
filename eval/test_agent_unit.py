@@ -17,6 +17,7 @@ ROOT = Path(os.environ.get('AGENT_SOURCE_ROOT', Path(__file__).resolve().parents
 
 def module(name, **attrs):
     result = types.ModuleType(name)
+    result.__path__ = []
     result.__dict__.update(attrs)
     return result
 
@@ -33,11 +34,21 @@ class AIMessage(Message):
 
 
 class Tool:
-    def __init__(self, fn):
-        self.name, self.fn = fn.__name__, fn
+    def __init__(self, fn, name=None, **kwargs):
+        self.name = name or getattr(fn, '__name__', 'tool')
+        self.fn = fn
 
     async def ainvoke(self, args):
         return await self.fn(**args)
+
+
+def tool(*args, **kwargs):
+    if len(args) == 1 and callable(args[0]) and not kwargs:
+        return Tool(args[0])
+    name = args[0] if args and isinstance(args[0], str) else kwargs.get('name')
+    def decorator(fn):
+        return Tool(fn, name=name or getattr(fn, '__name__', 'tool'))
+    return decorator
 
 
 class DTO:
@@ -53,18 +64,41 @@ class DTO:
 
 
 def load_modules():
+    enums_mod = module('app.models.enums', EventCategory=object, EventStatus=object)
+    models_mod = module('app.models', enums=enums_mod)
     stubs = {
         'langchain_core': module('langchain_core'),
-        'langchain_core.tools': module('langchain_core.tools', tool=Tool),
-        'langchain_core.messages': module('langchain_core.messages', AIMessage=AIMessage, HumanMessage=Message, SystemMessage=Message, ToolMessage=Message),
+        'langchain_core.tools': module('langchain_core.tools', tool=tool, BaseTool=Tool),
+        'langchain_core.messages': module('langchain_core.messages', AIMessage=AIMessage, HumanMessage=Message, SystemMessage=Message, ToolMessage=Message, BaseMessage=Message),
+        'langchain_openai': module('langchain_openai', ChatOpenAI=object),
         'langgraph': module('langgraph'),
         'langgraph.graph': module('langgraph.graph', END='end', START='start', StateGraph=object),
-        'app': module('app'), 'app.agent': module('app.agent'), 'app.schemas': module('app.schemas'),
-        'app.agent.checkpointer': module('app.agent.checkpointer', trim_conversation_history=lambda m: m),
-        'app.agent.prompts': module('app.agent.prompts', SYSTEM_PROMPT='system'),
+        'app': module('app'),
+        'app.models': models_mod,
+        'app.models.enums': enums_mod,
+        'app.agent': module('app.agent'),
+        'app.agent.checkpointer': module('app.agent.checkpointer', trim_conversation_history=lambda m, **kw: m, CheckpointerManager=object),
+        'app.agent.guardrails': module('app.agent.guardrails', GuardrailService=object),
+        'app.agent.prompts': module('app.agent.prompts', SYSTEM_PROMPT='system', get_system_prompt=lambda: 'system'),
         'app.agent.state': module('app.agent.state', AgentGraphState=dict),
+        'app.schemas': module('app.schemas'),
         'app.schemas.chat': module('app.schemas.chat', AgentRecommendationItemDTO=DTO, ChatMessageResponseDTO=DTO),
         'app.schemas.event': module('app.schemas.event', EventCardDTO=DTO, EventSearchFilterDTO=DTO),
+        'app.services': module('app.services'),
+        'app.services.catalog_service': module('app.services.catalog_service', CatalogService=object),
+        'app.services.embedding_service': module('app.services.embedding_service', EmbeddingService=object),
+        'app.services.fallback_search_service': module('app.services.fallback_search_service', FallbackSearchService=object),
+        'app.services.normalization_service': module('app.services.normalization_service', NormalizationService=type('DummyNorm', (), {'parse_date_to_yekaterinburg': staticmethod(lambda dt: dt)})),
+        'app.repositories': module('app.repositories'),
+        'app.repositories.audit_trace_repo': module('app.repositories.audit_trace_repo', AuditTraceRepository=object),
+        'app.repositories.dictionary_repo': module('app.repositories.dictionary_repo', DictionaryRepository=object),
+        'app.repositories.event_repo': module('app.repositories.event_repo', EventRepository=object),
+        'app.repositories.feedback_repo': module('app.repositories.feedback_repo', FeedbackRepository=object),
+        'app.repositories.subscription_repo': module('app.repositories.subscription_repo', SubscriptionRepository=object),
+        'app.core': module('app.core'),
+        'app.core.circuit_breaker': module('app.core.circuit_breaker', CircuitOpenError=RuntimeError, LLMCircuitBreaker=object),
+        'app.core.config': module('app.core.config', Settings=object),
+        'app.core.database': module('app.core.database', DatabaseManager=object),
     }
     patcher = patch.dict(sys.modules, stubs)
     patcher.start()

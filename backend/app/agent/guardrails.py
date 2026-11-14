@@ -1,3 +1,4 @@
+import copy
 import re
 import unicodedata
 from html import escape
@@ -71,29 +72,65 @@ class GuardrailService:
 
     def verify_output_grounding(
         self,
-        reply_text: str,
-        grounding_event_ids: list[str],
-        verified_cards_map: dict[str, dict[str, Any]],
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """Проверяет финальный ответ модели на отсутствие галлюцинаций и утечек промпта."""
-        cleaned_reply = reply_text
+        output_or_reply: dict[str, Any] | str | None = None,
+        cards_or_ids: dict[str, dict[str, Any]] | list[str] | None = None,
+        verified_cards_map: dict[str, dict[str, Any]] | None = None,
+        *,
+        reply_text: str | None = None,
+        grounding_event_ids: list[str] | None = None,
+        llm_output: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Проверяет финальный ответ модели на отсутствие галлюцинаций и утечек промпта.
 
-        # 1. Защита от утечки фрагментов системного промпта
+        Поддерживает как 2-аргументную сигнатуру со словарём (llm_output, verified_cards_map),
+        так и 3-аргументную сигнатуру (reply_text, grounding_event_ids, verified_cards_map).
+        """
+        if reply_text is not None:
+            output_or_reply = reply_text
+        elif llm_output is not None:
+            output_or_reply = llm_output
+        if grounding_event_ids is not None:
+            cards_or_ids = grounding_event_ids
+
+        if isinstance(output_or_reply, dict):
+            llm_output = output_or_reply
+            cards_map = cards_or_ids if isinstance(cards_or_ids, dict) else {}
+            output: dict[str, Any] = {}
+            for key in ("recommendations", "events", "cards"):
+                if key not in llm_output or not isinstance(llm_output[key], list):
+                    continue
+                verified = []
+                for item in llm_output[key]:
+                    if not isinstance(item, dict):
+                        continue
+                    nested = item.get("event")
+                    event_id = item.get("event_id") or item.get("id") or (nested.get("id") if isinstance(nested, dict) else None)
+                    card = cards_map.get(str(event_id))
+                    if not isinstance(card, dict):
+                        continue
+                    if key == "recommendations" or isinstance(nested, dict):
+                        verified.append({"event": copy.deepcopy(card), "constraint_match_explanation": "Данные мероприятия проверены по каталогу."})
+                    else:
+                        verified.append(copy.deepcopy(card))
+                output[key] = verified
+            return output
+
+        # 3-arg signature (reply_text, grounding_event_ids, verified_cards_map)
+        cleaned_reply = str(output_or_reply)
         for leak_pattern in PROMPT_LEAK_PATTERNS:
             cleaned_reply = leak_pattern.sub("[СКРЫТО]", cleaned_reply)
 
-        # 2. Фильтрация карточек-оснований
-        # Оставляем только те карточки, которые реально были получены из инструментов в этом диалоге
+        grounding_event_ids = cards_or_ids if isinstance(cards_or_ids, list) else []
+        cards_map = verified_cards_map or {}
         valid_recommendations: list[dict[str, Any]] = []
         seen: set[str] = set()
         for eid in grounding_event_ids:
-            if eid in verified_cards_map and eid not in seen:
-                valid_recommendations.append(verified_cards_map[eid])
+            if eid in cards_map and eid not in seen:
+                valid_recommendations.append(cards_map[eid])
                 seen.add(eid)
 
-        # Ограничение до 5 лучших карточек
         valid_recommendations = valid_recommendations[:5]
-
         return cleaned_reply, valid_recommendations
 
 

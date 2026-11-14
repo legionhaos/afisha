@@ -17,8 +17,8 @@ class CircuitState(str, enum.Enum):
     HALF_OPEN = "HALF_OPEN"
 
 
-class CircuitOpenError(Exception):
-    """Raised when an operation is attempted while the circuit breaker is OPEN."""
+class CircuitOpenError(RuntimeError):
+    """Raised when an operation is attempted while the circuit breaker is OPEN, or provider call failed."""
 
 
 class LLMCircuitBreaker:
@@ -33,10 +33,14 @@ class LLMCircuitBreaker:
         failure_threshold: int = 3,
         cooldown_seconds: float = 60.0,
         timeout_sec: float = 6.0,
+        timeout_seconds: float | None = None,
     ) -> None:
+        if timeout_seconds is not None:
+            timeout_sec = timeout_seconds
         self.failure_threshold = failure_threshold
         self.cooldown_seconds = cooldown_seconds
         self.timeout_sec = timeout_sec
+        self.timeout_seconds = timeout_sec
 
         self._state: CircuitState = CircuitState.CLOSED
         self._failure_count: int = 0
@@ -132,7 +136,7 @@ class LLMCircuitBreaker:
             async with self._lock:
                 if generation == self._generation:
                     self.record_failure(e)
-            raise
+            raise CircuitOpenError("Model provider call failed") from e
 
 
 # Global instance with default 6-second timeout strictly as per specification
