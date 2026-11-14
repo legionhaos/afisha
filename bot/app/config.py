@@ -9,6 +9,7 @@ class Settings:
     token: str
     api_base_url: str
     timeout: float
+    webapp_url: str = ""
 
     @classmethod
     def load(cls) -> "Settings":
@@ -22,4 +23,5 @@ class Settings:
         timeout = float(os.getenv("API_TIMEOUT", "20"))
         if timeout <= 0:
             raise ValueError("API_TIMEOUT должен быть положительным")
-        return cls(token, url, timeout)
+        webapp_url = os.getenv("WEBAPP_URL", "http://localhost:3000/miniapp").strip()
+        return cls(token, url, timeout, webapp_url)
