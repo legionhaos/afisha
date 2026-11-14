@@ -269,6 +269,7 @@ class ImportService:
             "age_limit": age_limit,
             "language": str(raw_row.get("language")).strip() if raw_row.get("language") else None,
             "org_link": str(raw_row.get("org_link") or raw_row.get("tickets_url") or "").strip() or None,
+            "image_url": str(raw_row.get("image_url") or "").strip() or None,
             "source_url": source_url,
             "source_type": SourceType.IMPORT,
             "source_hash": source_hash,

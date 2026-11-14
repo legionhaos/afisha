@@ -141,6 +141,7 @@ class CatalogService:
             age_limit=event.age_limit,
             language=event.language,
             org_link=event.org_link,
+            image_url=event.image_url,
             source_url=event.source_url,
             status=event.status,
             cancelled_badge=cancelled_badge,

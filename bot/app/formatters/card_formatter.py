@@ -26,8 +26,10 @@ def format_card(event: dict[str, Any]) -> str:
     address = html.escape(str(event.get('address', '')))
     age = event.get('age_limit', 0)
 
+    image_banner = f'<a href="{html.escape(str(event["image_url"]))}">&#8205;</a>' if event.get("image_url") else ""
+
     lines = [
-        f"<b>🎭 {title}</b>",
+        f"{image_banner}<b>🎭 {title}</b>",
         f"📅 <b>Дата:</b> {date_text} (UTC+5)",
         f"📍 <b>Место:</b> {city}, {venue}",
         f"🏢 <b>Адрес:</b> {address}",

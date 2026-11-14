@@ -121,6 +121,10 @@ class Event(Base, TimestampMixin):
         Text,
         nullable=True,
     )
+    image_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
     source_url: Mapped[str] = mapped_column(
         Text,
         nullable=False,

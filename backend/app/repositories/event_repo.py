@@ -303,6 +303,8 @@ class EventRepository:
             existing.description = max(existing.description or "", event_data.get("description") or "", key=len)
             if event_data.get("org_link") and not existing.org_link:
                 existing.org_link = event_data["org_link"]
+            if event_data.get("image_url") and not existing.image_url:
+                existing.image_url = event_data["image_url"]
             if event_data.get("lat") is not None and existing.lat is None:
                 existing.lat = event_data["lat"]
                 existing.lon = event_data["lon"]

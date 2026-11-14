@@ -88,6 +88,7 @@ MOVIES = [
         "duration": 110,
         "price_min": 280,
         "price_max": 450,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10893610/b16d56be-5231-483a-86cb-b8ba268df21b/orig",
     },
     {
         "title": "Любовь Советского Союза",
@@ -97,6 +98,7 @@ MOVIES = [
         "duration": 135,
         "price_min": 320,
         "price_max": 500,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10893610/e865f617-fdfa-45c1-90a6-c95a0bc8e578/orig",
     },
     {
         "title": "Манюня: Приключения в деревне",
@@ -106,6 +108,7 @@ MOVIES = [
         "duration": 95,
         "price_min": 250,
         "price_max": 400,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10838293/e005086d-15ec-44f2-9850-844c8c7c77c6/orig",
     },
     {
         "title": "Руки Вверх!",
@@ -115,6 +118,7 @@ MOVIES = [
         "duration": 105,
         "price_min": 300,
         "price_max": 480,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10592371/47fb31b6-a6fc-4d1a-8bb8-a28a2a0753b8/orig",
     },
     {
         "title": "Граф Монте-Кристо",
@@ -124,6 +128,7 @@ MOVIES = [
         "duration": 178,
         "price_min": 350,
         "price_max": 520,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10893610/2c7d91cb-d3f3-4e09-8039-4aaecabff8ce/orig",
     },
     {
         "title": "Вампиры легкого поведения",
@@ -133,6 +138,7 @@ MOVIES = [
         "duration": 102,
         "price_min": 300,
         "price_max": 450,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10893610/2485fa50-f85a-4e2b-beee-9892cbcf819e/orig",
     },
     {
         "title": "Берлинская жара",
@@ -142,6 +148,7 @@ MOVIES = [
         "duration": 115,
         "price_min": 300,
         "price_max": 480,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10838293/b4d2feee-97ba-4aee-bcf4-61c1fb5ecb54/orig",
     },
     {
         "title": "Возвращение попугая Кеши",
@@ -151,6 +158,7 @@ MOVIES = [
         "duration": 90,
         "price_min": 250,
         "price_max": 380,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10809616/4bcf6cba-4aa7-40ae-ba82-b13c1fbafe5b/orig",
     },
     {
         "title": "Пальма 2",
@@ -160,6 +168,7 @@ MOVIES = [
         "duration": 100,
         "price_min": 250,
         "price_max": 400,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10809616/549c43b9-18ba-4670-85f0-b0ff07797b10/orig",
     },
     {
         "title": "Анора",
@@ -169,6 +178,7 @@ MOVIES = [
         "duration": 139,
         "price_min": 350,
         "price_max": 550,
+        "image_url": "https://avatars.mds.yandex.net/get-kinopoisk-image/10809616/09d8aa04-4b9d-4c31-92be-3c9aa5d799f2/orig",
     },
 ]
 
@@ -188,6 +198,7 @@ SPORTS_FIXTURES = [
         "desc": "Главное принципиальное противостояние КХЛ — «Зелёное дерби»! Уфимский «Салават Юлаев» принимает казанский «Ак Барс» на льду Уфа-Арены.",
         "tags": ["спорт", "хоккей", "кхл", "салават юлаев", "уфа-арена"],
         "org_link": "https://hcsalavat.ru/tickets/",
+        "image_url": "https://cdn.kassir.ru/ufa/poster/46/46a81b7e0eeea470fcfd1933a270db65.png",
     },
     {
         "title": "Хоккейный матч КХЛ: «Салават Юлаев» (Уфа) — «Трактор» (Челябинск)",
@@ -202,6 +213,7 @@ SPORTS_FIXTURES = [
         "desc": "Матч регулярного чемпионата КХЛ между уфимским «Салаватом Юлаевым» и челябинским «Трактором». Битва за лидерство в Восточной конференции.",
         "tags": ["спорт", "хоккей", "кхл", "салават юлаев"],
         "org_link": "https://hcsalavat.ru/tickets/",
+        "image_url": "https://cdn.kassir.ru/ufa/poster/46/46a81b7e0eeea470fcfd1933a270db65.png",
     },
     {
         "title": "Хоккейный матч КХЛ: «Салават Юлаев» (Уфа) — «Металлург» (Магнитогорск)",
@@ -216,6 +228,7 @@ SPORTS_FIXTURES = [
         "desc": "Уральское дерби в Уфе: действующий обладатель Кубка Гагарина «Металлург» против атакующего хоккея Виктора Козлова.",
         "tags": ["спорт", "хоккей", "кхл", "салават юлаев"],
         "org_link": "https://hcsalavat.ru/tickets/",
+        "image_url": "https://cdn.kassir.ru/ufa/poster/46/46a81b7e0eeea470fcfd1933a270db65.png",
     },
     {
         "title": "Хоккейный матч КХЛ: «Салават Юлаев» (Уфа) — «Авангард» (Омск)",
@@ -230,6 +243,7 @@ SPORTS_FIXTURES = [
         "desc": "Принципиальная битва Востока КХЛ. «Салават Юлаев» встречает омский «Авангард» в домашнем поединке.",
         "tags": ["спорт", "хоккей", "кхл", "салават юлаев"],
         "org_link": "https://hcsalavat.ru/tickets/",
+        "image_url": "https://cdn.kassir.ru/ufa/poster/46/46a81b7e0eeea470fcfd1933a270db65.png",
     },
     # Футбол — ФК Уфа
     {
@@ -245,6 +259,7 @@ SPORTS_FIXTURES = [
         "desc": "Матч чемпионата России по футболу среди команд Первой лиги. ФК «Уфа» принимает одного из лидеров турнира — московское «Торпедо».",
         "tags": ["спорт", "футбол", "фк уфа", "первая лига"],
         "org_link": "https://fcufa.pro/tickets",
+        "image_url": "https://cdn.kassir.ru/ufa/poster/54/547eb59f515e0fa0c31327dc7537b987.png",
     },
     {
         "title": "Футбольный матч Первой лиги: ФК «Уфа» — «Ротор» (Волгоград)",
@@ -259,6 +274,7 @@ SPORTS_FIXTURES = [
         "desc": "Домашняя встреча ФК «Уфа» против волгоградского «Ротора». Жаркая борьба за важные турнирные очки.",
         "tags": ["спорт", "футбол", "фк уфа"],
         "org_link": "https://fcufa.pro/tickets",
+        "image_url": "https://cdn.kassir.ru/ufa/poster/54/547eb59f515e0fa0c31327dc7537b987.png",
     },
     # Волейбол — ВК Динамо-Урал
     {
@@ -338,6 +354,7 @@ def generate_cinema_events() -> list[dict]:
                     "age_limit": movie["age"],
                     "source_url": f"{venue['org_link']}/movie/{movie_idx}/{date_str}_{s_time.replace(':', '')}",
                     "org_link": venue["org_link"],
+                    "image_url": movie.get("image_url"),
                     "description": f"{movie['desc']} Жанры: {', '.join(movie['genres'])}. Сеанс в {venue['venue']} ({venue['city']}).",
                     "status": "published",
                     "source_name": "kinoteatr.ru",
@@ -373,6 +390,7 @@ def generate_sports_events() -> list[dict]:
             "age_limit": 6 if "хоккей" in item["sport"] or "футбол" in item["sport"] else 0,
             "source_url": f"{item['org_link']}/{item['days_ahead']}",
             "org_link": item["org_link"],
+            "image_url": item.get("image_url"),
             "description": item["desc"],
             "status": "published",
             "source_name": f"{item['sport']}.bashkortostan",
