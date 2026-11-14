@@ -58,6 +58,15 @@ async def test_incomplete_prices_are_not_published(price):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("low,high", [(500.9, 800), (500, 800.5), (True, 800), ("NaN", 800), ("Infinity", 800)])
+async def test_fractional_and_invalid_price_bounds_are_rejected(low, high):
+    svc = service()
+    report = await svc.import_file(__import__("json").dumps([payload(price_min=low, price_max=high)], ensure_ascii=False).encode(), "events.json", "test", "request")
+    assert report.rejected_count == 1
+    svc.event_repo.create_or_update_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("extra", [{"status": "draft"}, {"url_verified": False}])
 async def test_crawler_unverified_records_remain_drafts(extra):
     svc = service()

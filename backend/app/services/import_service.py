@@ -189,7 +189,13 @@ class ImportService:
         text_price = next((raw_row[key] for key in ("price_text", "price", "cost")
                            if raw_row.get(key) is not None and str(raw_row[key]).strip()), None)
         if has_low and has_high:
-            price_min, price_max = int(low), int(high)
+            try:
+                bounds = [Decimal(str(value).strip()) for value in (low, high)]
+                if any(not value.is_finite() or value != value.to_integral_value() for value in bounds):
+                    raise ValueError
+                price_min, price_max = (int(value) for value in bounds)
+            except (InvalidOperation, ValueError):
+                raise ValueError("Цена должна быть целым числом рублей") from None
             if price_min < 0 or price_max < price_min:
                 raise ValueError("Некорректный диапазон цен")
             if explicitly_free and (price_min or price_max):
