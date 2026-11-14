@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, time
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from app.models.enums import EventCategory, EventStatus, ModerationReason, SourceType
 from app.models.event import Event, EventSource
 from app.schemas.event import EventSearchFilterDTO
+from app.services.normalization_service import YEKT_TZ
 
 
 class EventRepository:
@@ -84,6 +85,9 @@ class EventRepository:
             clauses.append(Event.category == filters.category)
         if filters.date_from and exclude != "date":
             clauses.append(Event.date_start >= filters.date_from)
+        elif not getattr(filters, "include_past", False) and exclude != "date":
+            today_start = datetime.combine(datetime.now(YEKT_TZ).date(), time.min, tzinfo=YEKT_TZ)
+            clauses.append(Event.date_start >= today_start)
         if filters.date_to and exclude != "date":
             clauses.append(Event.date_start <= filters.date_to)
         if filters.price_max is not None and exclude != "price":
