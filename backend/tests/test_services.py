@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 import pytest
 from unittest.mock import AsyncMock
@@ -116,7 +117,7 @@ def test_deduplication_service_merge_fields():
 async def test_fallback_search_service_parsing():
     mock_catalog = AsyncMock()
     mock_dict = AsyncMock()
-    mock_dict.resolve_city_name.side_effect = lambda w: "Стерлитамак" if "стерлит" in w.lower() else None
+    mock_dict.get_all_cities.return_value = [SimpleNamespace(name="Стерлитамак")]
     mock_audit = AsyncMock()
 
     service = FallbackSearchService(mock_catalog, mock_dict, mock_audit)
@@ -129,3 +130,37 @@ async def test_fallback_search_service_parsing():
     assert filters.age_limit_max == 8
     assert filters.date_from is not None
     assert filters.date_to is not None
+
+
+@pytest.mark.asyncio
+async def test_fallback_next_week_preserves_hockey_and_city():
+    dictionaries = AsyncMock()
+    dictionaries.get_all_cities.return_value = [SimpleNamespace(name='Уфа')]
+    service = FallbackSearchService(AsyncMock(), dictionaries, AsyncMock())
+    filters = await service.parse_free_text_deterministically('хоккей в уфе на следующей неделе')
+    today = datetime.now(YEKT_TZ).date()
+    expected_monday = today + timedelta(days=7 - today.weekday())
+    assert filters.city == 'Уфа'
+    assert filters.query_text == 'хоккей|hockey'
+    assert filters.date_from.date() == expected_monday
+    assert filters.date_to.date() == expected_monday + timedelta(days=6)
+
+
+@pytest.mark.asyncio
+async def test_fallback_search_accepts_city_without_category():
+    catalog = AsyncMock()
+    catalog.search_catalog.return_value = SimpleNamespace(items=[])
+    dictionaries = AsyncMock()
+    dictionaries.get_all_cities.return_value = [SimpleNamespace(name="Уфа")]
+    audit = AsyncMock()
+    service = FallbackSearchService(catalog, dictionaries, audit)
+
+    response = await service.execute_fallback_query(
+        thread_id="test", user_identifier="test", message="куда сгонять сегодня в уфе", request_id="test"
+    )
+
+    filters = catalog.search_catalog.await_args.args[0]
+    assert filters.city == "Уфа"
+    assert filters.category is None
+    assert filters.date_from is not None
+    assert response.clarifying_question is None

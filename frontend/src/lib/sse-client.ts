@@ -9,6 +9,7 @@ export interface ChatStreamOptions {
   endpoint?: string;
   onText: (text: string) => void;
   onThreadId?: (id: string) => void;
+  onClarifyingQuestion?: (question: string | null) => void;
 }
 
 export async function streamChat(options: ChatStreamOptions): Promise<void> {
@@ -32,7 +33,15 @@ export async function streamChat(options: ChatStreamOptions): Promise<void> {
   let done = false;
   const handle = (data: string, event = 'message') => {
     if (done) return;
-    if (data.trim() === '[DONE]' || event === 'done') { done = true; return; }
+    if (data.trim() === '[DONE]') { done = true; return; }
+    if (event === 'done') {
+      try {
+        const payload = JSON.parse(data) as { clarifying_question?: string | null };
+        options.onClarifyingQuestion?.(payload.clarifying_question || null);
+      } catch { options.onClarifyingQuestion?.(null); }
+      done = true;
+      return;
+    }
     if (event === 'status') return;
     if (event === 'cards') {
       try {

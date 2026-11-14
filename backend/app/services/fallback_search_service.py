@@ -40,14 +40,24 @@ class FallbackSearchService:
         today_end = datetime.combine(now_yekt.date(), time.max, tzinfo=YEKT_TZ)
 
         # 1. Поиск города
-        # Проверяем токены запроса через триграммный справочник городов
-        words = re.findall(r"[а-яёА-ЯЁa-zA-Z]+", text)
-        for w in words:
-            if len(w) >= 3:
-                resolved = await self.dict_repo.resolve_city_name(w)
-                if resolved:
-                    filters.city = resolved
-                    break
+        # Only match city names or conservative Russian inflections, never fuzzy-match
+        # arbitrary words (e.g. "концерт") to unrelated cities.
+        words = re.findall(r"[а-яёa-z-]+", clean_text)
+        cities = await self.dict_repo.get_all_cities()
+        for city in cities:
+            name = city.name.lower().replace('ё', 'е')
+            forms = {name}
+            if name == 'уфа':
+                forms.update({'уфе', 'уфу', 'уфы'})
+            elif name.endswith('а') and len(name) > 4:
+                forms.update({name[:-1] + 'е', name[:-1] + 'у', name[:-1] + 'ы'})
+            elif name.endswith('й') and len(name) > 4:
+                forms.update({name[:-1] + 'ом', name[:-1] + 'ого'})
+            elif len(name) > 4 and name[-1] not in 'оеьы':
+                forms.update({name + 'е', name + 'а', name + 'у', name + 'ом'})
+            if any(word in forms for word in words):
+                filters.city = city.name
+                break
 
         # 2. Поиск даты
         if "сегодня" in clean_text:
@@ -67,6 +77,9 @@ class FallbackSearchService:
             filters.date_from = today_start + timedelta(days=days_until_sat)
             days = 1 if now_yekt.weekday() == 6 else 2
             filters.date_to = filters.date_from + timedelta(days=days, microseconds=-1)
+        elif re.search(r'\b(?:на\s+)?следующ\w*\s+недел\w*\b', clean_text):
+            filters.date_from = today_start + timedelta(days=7 - now_yekt.weekday())
+            filters.date_to = filters.date_from + timedelta(days=7, microseconds=-1)
         elif "на этой неделе" in clean_text:
             filters.date_from = today_start
             filters.date_to = today_end + timedelta(days=6 - now_yekt.weekday())
@@ -106,8 +119,19 @@ class FallbackSearchService:
         elif any(w in clean_text for w in ["экскурси", "тур"]):
             filters.category = EventCategory.EXCURSION
 
-        # 6. Остальной текст как query_text
-        filters.query_text = text[:150]
+        # Specific interests are mandatory constraints, not merely ranking hints.
+        if re.search(r'\b(?:рок(?:а|у|ом|е)?|rock)\b', clean_text):
+            filters.category = EventCategory.CONCERT
+            filters.query_text = 'рок|rock'
+        elif re.search(r'\b(?:хокке\w*|hockey)\b', clean_text):
+            filters.query_text = 'хоккей|hockey'
+        elif re.search(r'\b(?:танц\w*|танцевальн\w*|dance)\b', clean_text):
+            filters.query_text = 'танцы|танцевальный|танцевальная|dance'
+        elif re.search(r'\b(?:джаз\w*|jazz)\b', clean_text):
+            filters.category = EventCategory.CONCERT
+            filters.query_text = 'джаз|jazz'
+        else:
+            filters.query_text = None
         filters.page_size = 5
         return filters
 
@@ -121,26 +145,27 @@ class FallbackSearchService:
         """Выполняет поиск без языковой модели и возвращает гарантированный структурированный ответ."""
         started = monotonic()
         filters = await self.parse_free_text_deterministically(message)
-        result = await self.catalog_service.search_catalog(filters)
+        unsupported_sport = bool(re.search(r'\b(?:спорт\w*|футбол\w*|матч\w*|соревнован\w*)', message.lower())) and not filters.query_text
+        needs_city = not filters.city
+        result = None if needs_city or unsupported_sport else await self.catalog_service.search_catalog(filters)
 
         recommendations = [
             AgentRecommendationItemDTO(
                 event=item,
                 constraint_match_explanation="Сведения из каталога; уточните условия у организатора.",
             )
-            for item in result.items
+            for item in (result.items if result else [])
         ]
 
         trace_id = uuid4()
-        reply_intro = (
-            "⚠️ Интеллектуальный агент временно работает в резервном режиме поиска по фильтрам. "
-        )
-        if recommendations:
-            reply_intro += (f"Найдено {len(recommendations)} мероприятий по распознанным параметрам. "
-                            "Проверьте остальные условия и стоимость у организатора.")
+        if unsupported_sport:
+            reply_intro = 'Сейчас спортивные события не поддерживаются в каталоге. Попробуйте другое направление.'
+        elif needs_city:
+            reply_intro = 'В каком городе ищем события?'
+        elif recommendations:
+            reply_intro = f'Нашлось событий: {len(recommendations)}. Сейчас работает упрощённый поиск — проверьте остальные условия.'
         else:
-            reason = result.empty_explanation.message if result.empty_explanation else "Ничего не найдено."
-            reply_intro += f"{reason} Попробуйте изменить параметры поиска."
+            reply_intro = 'По этим параметрам событий не нашлось. Попробуйте изменить запрос.'
 
         # Сохранение трассировки с флагом fallback_used = True
         await self.audit_repo.save_agent_trace({
@@ -150,7 +175,7 @@ class FallbackSearchService:
             "user_query": message,
             "plan_steps": ["fallback_deterministic_parse", "catalog_search"],
             "tool_calls": [{"tool": "deterministic_search", "args": filters.model_dump(mode="json")}],
-            "grounding_event_ids": [item.id for item in result.items],
+            "grounding_event_ids": [item.id for item in (result.items if result else [])],
             "latency_ms": round((monotonic() - started) * 1000),
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -164,6 +189,7 @@ class FallbackSearchService:
             reply_text=reply_intro,
             recommendations=recommendations,
             is_fallback_mode=True,
-            fallback_notice="Интеллектуальный агент переключен в резервный режим без LLM.",
+            fallback_notice="Работает упрощённый поиск без ИИ.",
+            clarifying_question=('В каком городе ищем события?' if needs_city and not unsupported_sport else None),
             data_grounded_badge="Ответ построен исключительно по проверенным данным сервиса",
         )

@@ -68,8 +68,8 @@ class CatalogService:
 
         # Генерация эмбеддинга для гибридного поиска
         query_embedding = None
-        if filters.query_text:
-            query_embedding = await self.emb_service.generate_embedding(filters.query_text)
+        # Lexical matching is a mandatory gate; avoid sending private user queries
+        # to the embedding provider until semantic retrieval is calibrated.
 
         items, total = await self.event_repo.hybrid_search(filters, query_embedding)
 
@@ -126,8 +126,8 @@ class CatalogService:
             normalized_title=event.normalized_title,
             category=event.category,
             tags=event.tags or [],
-            date_start=event.date_start,
-            date_end=event.date_end,
+            date_start=event.date_start.astimezone(YEKT_TZ) if event.date_start.tzinfo else event.date_start.replace(tzinfo=YEKT_TZ),
+            date_end=(event.date_end.astimezone(YEKT_TZ) if event.date_end.tzinfo else event.date_end.replace(tzinfo=YEKT_TZ)) if event.date_end else None,
             duration_min=event.duration_min,
             city=event.city,
             venue=event.venue,

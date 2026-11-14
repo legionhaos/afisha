@@ -13,6 +13,7 @@ export default function AgentChatDrawer({ launchRequest }: { launchRequest?: { i
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const thread = useRef<string | null>(null);
+  const pendingCityQuery = useRef<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   const nextId = useRef(0);
   const launcher = useRef<HTMLButtonElement>(null);
@@ -35,6 +36,7 @@ export default function AgentChatDrawer({ launchRequest }: { launchRequest?: { i
     controller.current?.abort();
     controller.current = null;
     thread.current = null;
+    pendingCityQuery.current = null;
     setMessages([]);
     setInput('');
     setError('');
@@ -61,8 +63,11 @@ export default function AgentChatDrawer({ launchRequest }: { launchRequest?: { i
     setMessages(previous => [...previous, { id: userId, role: 'user', text: message }]);
     setInput(''); setError(''); setLoading(true);
     try {
+      const query = pendingCityQuery.current ? `${pendingCityQuery.current}. Город: ${message}` : message;
+      pendingCityQuery.current = null;
       await streamChat({
-        message, threadId: thread.current, signal: request.signal,
+        message: query, threadId: thread.current, signal: request.signal,
+        onClarifyingQuestion: question => { if (controller.current === request && question?.toLowerCase().includes('город')) pendingCityQuery.current = query; },
         onThreadId: id => { if (controller.current === request) thread.current = id; },
         onText: text => {
           if (controller.current !== request) return;
