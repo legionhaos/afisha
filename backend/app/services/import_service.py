@@ -277,7 +277,7 @@ class ImportService:
         }
 
         confidence, is_disputed, dispute_reason = self.dedup_service.evaluate_confidence_and_disputes(event_dict_payload)
-        if canonical_city is None:
+        if canonical_city is None or raw_row.get("url_verified") is False:
             confidence = min(confidence, 0.7)
             is_disputed = True
             dispute_reason = dispute_reason or ModerationReason.LOW_CONFIDENCE
@@ -293,8 +293,10 @@ class ImportService:
             or "отменено" in raw_title_str.lower()
         ):
             event_dict_payload["status"] = EventStatus.CANCELLED
-        elif is_disputed:
+        elif is_disputed or raw_status == EventStatus.DRAFT.value:
             event_dict_payload["status"] = EventStatus.DRAFT
+            event_dict_payload["is_disputed"] = True
+            event_dict_payload["dispute_reason"] = dispute_reason or ModerationReason.MANUAL_FLAG
             report.flagged_for_moderation_count += 1
         else:
             event_dict_payload["status"] = EventStatus.PUBLISHED
@@ -315,9 +317,9 @@ class ImportService:
                 setattr(event, field, value)
             if event_dict_payload["status"] == EventStatus.CANCELLED:
                 event.status = EventStatus.CANCELLED
-            if is_disputed:
+            if event_dict_payload["is_disputed"]:
                 event.is_disputed = True
-                event.dispute_reason = dispute_reason
+                event.dispute_reason = event_dict_payload["dispute_reason"]
                 if event.status != EventStatus.CANCELLED:
                     event.status = EventStatus.DRAFT
             await self.event_repo.session.flush()
