@@ -173,17 +173,16 @@ class CulturalAgentOrchestrator:
         from app.schemas.chat import AgentRecommendationItemDTO, ChatMessageResponseDTO
         start = state.get('started_monotonic', time.monotonic()) or time.monotonic()
         selected_ids: list[str] = []
-        needs_clarification = True
-        if state.get('search_complete'):
-            needs_clarification = False
+        needs_clarification = False
         clarification_type = 'city'
         messages = state.get('messages', [])
         if messages and isinstance(messages[-1], AIMessage) and not getattr(messages[-1], 'tool_calls', None):
             try:
                 selection = json.loads(messages[-1].content)
-                if isinstance(selection, dict) and isinstance(selection.get('event_ids'), list):
-                    selected_ids = [str(UUID(str(item))) for item in selection['event_ids'][:50]]
-                    needs_clarification = selection.get('needs_clarification') is not False
+                if isinstance(selection, dict):
+                    if isinstance(selection.get('event_ids'), list):
+                        selected_ids = [str(UUID(str(item))) for item in selection['event_ids'][:50]]
+                    needs_clarification = selection.get('needs_clarification') is True
                     if selection.get('clarification_type') in ('city', 'interest', 'date'):
                         clarification_type = selection['clarification_type']
             except (TypeError, ValueError, AttributeError):
@@ -469,7 +468,12 @@ class CulturalAgentOrchestrator:
                             "summary": parsed.get("summary"),
                         }
                     elif isinstance(parsed, dict):
-                        if tool_name == 'search_events' and 'error' not in parsed and isinstance(parsed.get('count'), int):
+                        if (
+                            len(last_msg.tool_calls) == 1
+                            and tool_name == 'search_events'
+                            and 'error' not in parsed
+                            and isinstance(parsed.get('count'), int)
+                        ):
                             search_complete = True
                         key_by_tool = {"search_events": "events", "find_similar": "similar_events", "get_venue_schedule": "schedule"}
                         key = key_by_tool.get(tool_name)
