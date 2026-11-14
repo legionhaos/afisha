@@ -58,8 +58,8 @@ async def test_idempotent_import_without_duplicates():
     )
 
     csv_payload = (
-        "title,city,venue,address,date_start,price,category\n"
-        "Симфонический концерт,Уфа,ГКЗ Башкортостан,ул. Ленина 50,2026-11-20 19:00,500,концерт\n"
+        "title,city,venue,address,date_start,price,category,source_url,description\n"
+        "Симфонический концерт,Уфа,ГКЗ Башкортостан,ул. Ленина 50,2026-11-20 19:00,500,концерт,https://source.com/1,Прекрасный вечер музыки\n"
     ).encode("utf-8")
 
     # 1. Первый прогон импорта -> 1 добавлено

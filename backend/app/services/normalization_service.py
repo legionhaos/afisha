@@ -97,7 +97,7 @@ class NormalizationService:
     def parse_date_to_yekaterinburg(self, raw_date: str | datetime | None) -> datetime:
         """Приводит любую дату к часовому поясу Asia/Yekaterinburg (UTC+5)."""
         if raw_date is None:
-            return datetime.now(YEKT_TZ)
+            raise ValueError("Дата не указана")
 
         if isinstance(raw_date, datetime):
             if raw_date.tzinfo is None:
@@ -130,8 +130,8 @@ class NormalizationService:
             if dt.tzinfo is None:
                 return dt.replace(tzinfo=YEKT_TZ)
             return dt.astimezone(YEKT_TZ)
-        except Exception:
-            return datetime.now(YEKT_TZ)
+        except ValueError:
+            raise ValueError(f"Не удалось разобрать дату: {str_date}") from None
 
     def normalize_age_limit(self, raw_age: str | int | None, context_text: str = "") -> int:
         """Округляет возраст к стандартной шкале {0, 6, 12, 16, 18} по требованиям ТЗ."""
@@ -140,13 +140,16 @@ class NormalizationService:
         if isinstance(raw_age, int):
             age_val = raw_age
         elif isinstance(raw_age, str) and raw_age.strip():
+            if re.match(r"\s*-\s*\d", raw_age):
+                raise ValueError("Возрастное ограничение не может быть отрицательным")
             match = AGE_REGEX.search(raw_age)
-            if match:
-                age_val = int(match.group(1))
-        elif context_text:
-            match = AGE_REGEX.search(context_text)
-            if match:
-                age_val = int(match.group(1))
+            if not match:
+                raise ValueError("Не удалось разобрать возрастное ограничение")
+            age_val = int(match.group(1))
+        elif raw_age is not None and not isinstance(raw_age, str):
+            raise ValueError("Некорректное возрастное ограничение")
+        if age_val < 0 or age_val > 18:
+            raise ValueError("Возрастное ограничение вне диапазона 0–18")
 
         # Приведение к допустимым значениям 0, 6, 12, 16, 18
         if age_val <= 0:

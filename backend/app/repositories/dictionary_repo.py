@@ -22,7 +22,7 @@ class DictionaryRepository:
         if not raw_city or not raw_city.strip():
             return None
 
-        clean = raw_city.strip().lower()
+        clean = " ".join(raw_city.casefold().replace("ё", "е").split())
 
         # 1. Exact match on normalized_name
         stmt_exact = select(City.name).where(City.normalized_name == clean).limit(1)
@@ -31,13 +31,11 @@ class DictionaryRepository:
         if city_exact:
             return city_exact
 
-        # 2. Trigram similarity match with threshold >= 0.45
-        # In PostgreSQL with pg_trgm: func.similarity(City.normalized_name, clean)
         similarity_expr = func.similarity(City.normalized_name, clean)
         stmt_fuzzy = (
             select(City.name, similarity_expr.label("sim"))
-            .where(similarity_expr >= 0.45)
-            .order_by(similarity_expr.desc())
+            .where(City.normalized_name.op("%")(clean), similarity_expr >= 0.3)
+            .order_by(similarity_expr.desc(), City.name)
             .limit(1)
         )
         res_fuzzy = await self.session.execute(stmt_fuzzy)

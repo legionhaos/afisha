@@ -5,7 +5,9 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     Boolean,
+    Float,
     and_,
+    cast,
     case,
     func,
     or_,
@@ -70,7 +72,7 @@ class EventRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    def _build_base_filters(self, filters: EventSearchFilterDTO) -> list[Any]:
+    def _build_base_filters(self, filters: EventSearchFilterDTO, exclude: str | None = None) -> list[Any]:
         """Формирует общие предикаты фильтрации каталога."""
         clauses = [Event.status == EventStatus.PUBLISHED]
 
@@ -78,25 +80,20 @@ class EventRepository:
             clauses.append(func.lower(Event.city) == filters.city.strip().lower())
         if filters.venue:
             clauses.append(func.lower(Event.venue).contains(filters.venue.strip().lower()))
-        if filters.category:
+        if filters.category and exclude != "category":
             clauses.append(Event.category == filters.category)
-        if filters.date_from:
+        if filters.date_from and exclude != "date":
             clauses.append(Event.date_start >= filters.date_from)
-        if filters.date_to:
+        if filters.date_to and exclude != "date":
             clauses.append(Event.date_start <= filters.date_to)
-        if filters.price_max is not None:
+        if filters.price_max is not None and exclude != "price":
             clauses.append(Event.price_min <= filters.price_max)
-        if filters.is_free is True:
-            clauses.append(Event.is_free.is_(True))
-        if filters.age_limit_max is not None:
+        if filters.is_free is not None:
+            clauses.append(Event.is_free.is_(filters.is_free))
+        if filters.age_limit_max is not None and exclude != "age":
             clauses.append(Event.age_limit <= filters.age_limit_max)
-        if filters.max_duration_min is not None:
-            clauses.append(
-                or_(
-                    Event.duration_min.is_(None),
-                    Event.duration_min <= filters.max_duration_min,
-                )
-            )
+        if filters.max_duration_min is not None and exclude != "duration":
+            clauses.append(Event.duration_min <= filters.max_duration_min)
         if filters.language:
             clauses.append(func.lower(Event.language) == filters.language.strip().lower())
         if filters.tags:
@@ -109,10 +106,7 @@ class EventRepository:
         filters: EventSearchFilterDTO,
         query_embedding: list[float] | None = None,
     ) -> tuple[list[Event], int]:
-        """Гибридный поиск (RRF), объединяющий FTS (0.4) и Vector (0.6).
-
-        При query_embedding is None автоматически переключается на комбинацию FTS и pg_trgm.
-        """
+        """Объединяет ранги текстового и векторного поиска через RRF."""
         clauses = self._build_base_filters(filters)
 
         query_text = filters.query_text.strip() if filters.query_text else None
@@ -137,123 +131,81 @@ class EventRepository:
             if topic_clauses:
                 clauses.append(or_(*topic_clauses))
 
-        # Count and page must use the same filtered candidate set.
-        count_stmt = select(func.count(Event.id)).where(and_(*clauses))
-        total_res = await self.session.execute(count_stmt)
-        total = total_res.scalar() or 0
-
-        if total == 0:
-            return [], 0
-
-        # 2. Main query construction
-        query_text = filters.query_text.strip() if filters.query_text else None
-        offset = (filters.page - 1) * filters.page_size
-        limit = filters.page_size
-
-        stmt = select(Event).options(selectinload(Event.sources)).where(and_(*clauses))
-
-        if query_text and query_embedding is not None:
-            # Hybrid search with Reciprocal Rank Fusion (RRF)
-            # RRF_Score = 0.4 / (60 + rank_text) + 0.6 / (60 + rank_vec)
-            # In PostgreSQL:
-            text_rank_expr = func.ts_rank(Event.tsv, func.websearch_to_tsquery("russian", query_text))
-            vec_dist_expr = Event.embedding.cosine_distance(query_embedding)
-
-            # Combined score expression
-            rrf_score = (
-                0.4 / (60.0 + func.coalesce(text_rank_expr, 0.0)) +
-                0.6 / (60.0 + func.coalesce(vec_dist_expr, 1.0))
+        query = filters.query_text.strip() if filters.query_text else ""
+        text_ranked = vector_ranked = None
+        if query:
+            normalized = query.casefold().replace("ё", "е")
+            tsquery = func.websearch_to_tsquery("russian", query)
+            similarity = func.similarity(Event.normalized_title, normalized)
+            score = func.ts_rank(Event.tsv, tsquery) + similarity
+            text_ranked = (
+                select(Event.id.label("id"), func.row_number().over(order_by=(score.desc(), Event.id)).label("rank"))
+                .where(*clauses, or_(Event.tsv.op("@@")(tsquery), Event.normalized_title.op("%")(normalized)))
+                .cte("text_search")
             )
-            stmt = stmt.order_by(rrf_score.desc(), Event.date_start.asc())
-        elif query_text and query_embedding is None:
-            # Degraded search without LLM: ts_rank + trigram similarity
-            text_rank = func.ts_rank(Event.tsv, func.websearch_to_tsquery("russian", query_text))
-            trgm_sim = func.similarity(Event.normalized_title, query_text.lower())
-            combined = text_rank * 0.5 + trgm_sim * 0.5
-            stmt = stmt.order_by(combined.desc(), Event.date_start.asc())
+        if query_embedding is not None:
+            distance = Event.embedding.cosine_distance(query_embedding)
+            vector_ranked = (
+                select(Event.id.label("id"), func.row_number().over(order_by=(distance, Event.id)).label("rank"))
+                .where(*clauses, Event.embedding.is_not(None))
+                .order_by(distance, Event.id).limit(20).cte("vector_search")
+            )
+        ranked = None
+        if text_ranked is not None and vector_ranked is not None:
+            score = (func.coalesce(0.4 / (60 + cast(text_ranked.c.rank, Float)), 0.0)
+                     + func.coalesce(0.6 / (60 + cast(vector_ranked.c.rank, Float)), 0.0))
+            ranked = (select(func.coalesce(text_ranked.c.id, vector_ranked.c.id).label("id"), score.label("score"))
+                      .select_from(text_ranked.join(vector_ranked, text_ranked.c.id == vector_ranked.c.id, full=True))
+                      .cte("ranked"))
+        elif text_ranked is not None or vector_ranked is not None:
+            source = text_ranked if text_ranked is not None else vector_ranked
+            ranked = select(source.c.id, (1.0 / (60 + cast(source.c.rank, Float))).label("score")).cte("ranked")
+        stmt = select(Event).options(selectinload(Event.sources)).where(*clauses)
+        count_stmt = select(func.count(Event.id)).where(*clauses)
+        if ranked is not None:
+            stmt = stmt.join(ranked, ranked.c.id == Event.id)
+            count_stmt = count_stmt.join(ranked, ranked.c.id == Event.id)
+        if filters.sort_by == "price_min":
+            ordering = (Event.price_min, Event.date_start, Event.id)
+        elif filters.sort_by == "relevance" and ranked is not None:
+            ordering = (ranked.c.score.desc(), Event.date_start, Event.id)
         else:
-            # Default sorting by parameter
-            if filters.sort_by == "price_min":
-                stmt = stmt.order_by(Event.price_min.asc(), Event.date_start.asc())
-            else:
-                stmt = stmt.order_by(Event.date_start.asc())
-
-        stmt = stmt.offset(offset).limit(limit)
+            ordering = (Event.date_start, Event.id)
+        total = (await self.session.execute(count_stmt)).scalar() or 0
+        stmt = stmt.order_by(*ordering).offset((filters.page - 1) * filters.page_size).limit(filters.page_size)
         result = await self.session.execute(stmt)
-        items = list(result.scalars().all())
-        return items, total
+        return list(result.scalars().all()), total
 
     async def diagnose_blocking_constraints(self, filters: EventSearchFilterDTO) -> list[str]:
-        """Находит блокирующие ограничения (цена, дата, возраст, категория) при пустой выдаче."""
-        # Baseline where status == PUBLISHED and city matches (if specified)
-        base_conditions = [Event.status == EventStatus.PUBLISHED]
-        if filters.city:
-            base_conditions.append(func.lower(Event.city) == filters.city.strip().lower())
-
-        # Construct conditional counts testing each relaxation
-        without_price_cond = list(base_conditions)
-        without_date_cond = list(base_conditions)
-        without_age_cond = list(base_conditions)
-        without_category_cond = list(base_conditions)
-
-        # Apply other filters except one
-        if filters.category:
-            without_price_cond.append(Event.category == filters.category)
-            without_date_cond.append(Event.category == filters.category)
-            without_age_cond.append(Event.category == filters.category)
-
-        if filters.date_from:
-            without_price_cond.append(Event.date_start >= filters.date_from)
-            without_age_cond.append(Event.date_start >= filters.date_from)
-            without_category_cond.append(Event.date_start >= filters.date_from)
-        if filters.date_to:
-            without_price_cond.append(Event.date_start <= filters.date_to)
-            without_age_cond.append(Event.date_start <= filters.date_to)
-            without_category_cond.append(Event.date_start <= filters.date_to)
-
-        if filters.price_max is not None:
-            without_date_cond.append(Event.price_min <= filters.price_max)
-            without_age_cond.append(Event.price_min <= filters.price_max)
-            without_category_cond.append(Event.price_min <= filters.price_max)
-
-        if filters.age_limit_max is not None:
-            without_price_cond.append(Event.age_limit <= filters.age_limit_max)
-            without_date_cond.append(Event.age_limit <= filters.age_limit_max)
-            without_category_cond.append(Event.age_limit <= filters.age_limit_max)
-
-        stmt = select(
-            func.count(Event.id).filter(and_(*without_price_cond)).label("cnt_no_price"),
-            func.count(Event.id).filter(and_(*without_date_cond)).label("cnt_no_date"),
-            func.count(Event.id).filter(and_(*without_age_cond)).label("cnt_no_age"),
-            func.count(Event.id).filter(and_(*without_category_cond)).label("cnt_no_cat"),
-        )
-        res = await self.session.execute(stmt)
-        row = res.first()
-
-        blocking: list[str] = []
-        if row:
-            cnt_no_price, cnt_no_date, cnt_no_age, cnt_no_cat = row
-            if cnt_no_price > 0 and filters.price_max is not None:
-                blocking.append(
-                    f"Цена: сняв ограничение до {filters.price_max} ₽, доступно еще {cnt_no_price} мероприятий"
-                )
-            if cnt_no_date > 0 and (filters.date_from or filters.date_to):
-                blocking.append(
-                    f"Даты: в другие дни в этом городе доступно {cnt_no_date} мероприятий"
-                )
-            if cnt_no_age > 0 and filters.age_limit_max is not None:
-                blocking.append(
-                    f"Возрастной ценз: для других возрастов доступно {cnt_no_age} мероприятий"
-                )
-            if cnt_no_cat > 0 and filters.category:
-                blocking.append(
-                    f"Категория: в других жанрах доступно {cnt_no_cat} мероприятий"
-                )
-
-        if not blocking:
-            blocking.append("По заданным параметрам в выбранном городе нет запланированных событий.")
-
-        return blocking
+        """Проверяет каждое ослабление с сохранением остальных ограничений."""
+        active = {
+            "price": filters.price_max is not None,
+            "date": filters.date_from is not None or filters.date_to is not None,
+            "age": filters.age_limit_max is not None,
+            "duration": filters.max_duration_min is not None,
+            "category": filters.category is not None,
+        }
+        expressions = []
+        for name, enabled in active.items():
+            if not enabled:
+                continue
+            clauses = self._build_base_filters(filters, exclude=name)
+            if filters.query_text and filters.query_text.strip():
+                query = filters.query_text.strip()
+                normalized = query.casefold().replace("ё", "е")
+                clauses.append(or_(
+                    Event.tsv.op("@@")(func.websearch_to_tsquery("russian", query)),
+                    Event.normalized_title.op("%")(normalized),
+                ))
+            expressions.append(func.count(Event.id).filter(and_(*clauses)).label(name))
+        if not expressions:
+            return ["По заданным параметрам нет запланированных событий."]
+        counts = (await self.session.execute(select(*expressions))).one()._mapping
+        labels = {"price": "Цена", "date": "Даты", "age": "Возрастной ценз",
+                  "duration": "Продолжительность", "category": "Категория"}
+        result = [f"{labels[name]}: при снятии ограничения доступно {counts[name]} мероприятий"
+                  for name in active if name in counts and counts[name] > 0]
+        return result or ["По заданным параметрам нет запланированных событий."]
 
     async def find_similar_events(
         self,
@@ -279,9 +231,9 @@ class EventRepository:
         stmt = select(Event).options(selectinload(Event.sources)).where(and_(*clauses))
 
         if base_event.embedding is not None:
-            stmt = stmt.order_by(
-                Event.embedding.cosine_distance(base_event.embedding).asc(),
-                Event.date_start.asc(),
+            distance = Event.embedding.cosine_distance(base_event.embedding)
+            stmt = stmt.where(or_(Event.category == base_event.category, distance <= 0.3)).order_by(
+                distance.nulls_last(), Event.date_start.asc(), Event.id,
             )
         else:
             # Fallback to category and date
@@ -324,24 +276,34 @@ class EventRepository:
     ) -> tuple[Event, Literal["added", "updated", "merged"]]:
         """Идемпотентная вставка/обновление события с дедупликацией по dedup_key."""
         dedup_key = event_data["dedup_key"]
+        # Serialize imports for one canonical event, including the initial insert.
+        await self.session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(dedup_key, 0)))
+        )
         existing = await self.get_by_dedup_key(dedup_key)
 
         if existing:
             # 1. Duplicate found: merge incoming data and record new source
-            existing.description = max(existing.description, event_data.get("description", ""), key=len)
+            existing.description = max(existing.description or "", event_data.get("description") or "", key=len)
             if event_data.get("org_link") and not existing.org_link:
                 existing.org_link = event_data["org_link"]
-            if event_data.get("lat") and not existing.lat:
+            if event_data.get("lat") is not None and existing.lat is None:
                 existing.lat = event_data["lat"]
                 existing.lon = event_data["lon"]
 
             # Merge tags
             incoming_tags = event_data.get("tags", [])
-            existing.tags = list(set(existing.tags + incoming_tags))
-            existing.verified_at = event_data.get("verified_at", datetime.now(existing.verified_at.tzinfo))
+            existing.tags = list(dict.fromkeys([*(existing.tags or []), *incoming_tags]))
+            if event_data.get("verified_at") is not None:
+                existing.verified_at = event_data["verified_at"]
 
             if event_data.get("status") == EventStatus.CANCELLED:
                 existing.status = EventStatus.CANCELLED
+            if event_data.get("is_disputed"):
+                existing.is_disputed = True
+                existing.dispute_reason = event_data.get("dispute_reason")
+                if existing.status != EventStatus.CANCELLED:
+                    existing.status = EventStatus.DRAFT
 
             if existing.price_min == 0 and existing.price_max == 0 and not existing.is_free:
                 existing.price_min = event_data.get("price_min", 0)

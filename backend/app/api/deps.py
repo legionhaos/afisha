@@ -32,6 +32,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async with db_manager.sessionmaker() as session:
         try:
             yield session
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
