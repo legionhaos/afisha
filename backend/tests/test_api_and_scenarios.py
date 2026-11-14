@@ -69,7 +69,9 @@ async def test_idempotent_import_without_duplicates():
     assert report1.rejected_count == 0
 
     # 2. Второй прогон того же файла -> запись уже есть в raw_event_records
-    mock_raw_repo.get_by_hash.return_value = AsyncMock()  # имитируем наличие записи по source_hash
+    mock_raw_repo.get_by_hash.return_value = AsyncMock()
+    mock_raw_repo.get_by_hash.return_value.processed_event_id = uuid4()
+    mock_raw_repo.get_by_hash.return_value.raw_payload = import_service._parse_file_to_rows(csv_payload, "events.csv")[0]
     report2 = await import_service.import_file(csv_payload, "events.csv", "admin", "req_2")
     assert report2.total_received == 1
     assert report2.added_count == 0

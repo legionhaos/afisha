@@ -134,7 +134,13 @@ class ImportService:
         if replay_record is None:
             existing_raw = await self.raw_repo.get_by_hash(source_hash)
             if existing_raw:
-                if existing_raw.processed_event_id is None:
+                if existing_raw.raw_payload != raw_row:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Данные источника изменились при том же ключе; требуется проверка модератора",
+                    ))
+                elif existing_raw.processed_event_id is None:
                     report.rejected_count += 1
                     report.errors.append(ImportReportItemErrorDTO(
                         row_index=row_index, raw_title=raw_title_str,
@@ -154,7 +160,13 @@ class ImportService:
                 existing_raw = await self.raw_repo.get_by_hash(source_hash)
                 if existing_raw is None:
                     raise RuntimeError("Не удалось прочитать ранее сохранённый источник")
-                if existing_raw.processed_event_id is None:
+                if existing_raw.raw_payload != raw_row:
+                    report.rejected_count += 1
+                    report.errors.append(ImportReportItemErrorDTO(
+                        row_index=row_index, raw_title=raw_title_str,
+                        reason="Данные источника изменились при том же ключе; требуется проверка модератора",
+                    ))
+                elif existing_raw.processed_event_id is None:
                     report.rejected_count += 1
                     report.errors.append(ImportReportItemErrorDTO(
                         row_index=row_index, raw_title=raw_title_str,
