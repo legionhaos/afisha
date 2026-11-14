@@ -170,9 +170,11 @@ class NormalizationService:
         description: str,
     ) -> tuple[EventCategory, list[str]]:
         """Сопоставляет категорию по синонимам и генерирует теги."""
-        combined = f"{raw_category or ''} {title} {description}".lower()
+        raw_cat_clean = (raw_category or "").strip().lower()
+        combined = f"{raw_cat_clean} {title} {description}".lower()
         tags: list[str] = []
 
+        # Базовые теги
         if any(w in combined for w in ["дет", "ребен", "семь", "сказк", "кукольн"]):
             tags.append("дети")
         if any(w in combined for w in ["пушкинск"]):
@@ -185,21 +187,44 @@ class NormalizationService:
             tags.append("рок")
         if any(w in combined for w in ["классическ", "симфони"]):
             tags.append("классика")
+        if any(w in combined for w in ["стендап", "stand up", "standup"]):
+            tags.append("стендап")
 
-        if any(w in combined for w in ["концерт", "оркестр", "филармон", "музык", "песн", "хор"]):
-            return EventCategory.CONCERT, tags
-        elif any(w in combined for w in ["спектакл", "театр", "драм", "комеди", "балет", "опер"]):
-            return EventCategory.THEATER, tags
-        elif any(w in combined for w in ["выставк", "музей", "галере", "экспозици"]):
-            return EventCategory.EXHIBITION, tags
+        # Спорт теги
+        if any(w in combined for w in ["хоккей", "кхл", "салават юлаев", "шайб"]):
+            tags.extend(["спорт", "хоккей"])
+        elif any(w in combined for w in ["футбол", "фк уфа", "рпл", "фнл", "мяч"]):
+            tags.extend(["спорт", "футбол"])
+        elif any(w in combined for w in ["волейбол", "динамо-урал"]):
+            tags.extend(["спорт", "волейбол"])
+        elif any(w in combined for w in ["баскетбол", "уфимец"]):
+            tags.extend(["спорт", "баскетбол"])
+        elif any(w in combined for w in ["бокс", "мма", "борьб", "дзюдо", "единоборств"]):
+            tags.extend(["спорт", "бокс"])
+        elif any(w in combined for w in ["спорт", "матч", "турнир", "чемпионат", "кубок"]):
+            tags.append("спорт")
+
+        # Если явно передан валидный enum
+        for cat_enum in EventCategory:
+            if raw_cat_clean == cat_enum.value.lower():
+                return cat_enum, list(dict.fromkeys(tags))
+
+        # Сопоставление по контенту
+        if any(w in combined for w in ["кино", "фильм", "мультфильм", "кинопоказ", "cinema", "кинотеатр"]):
+            tags.append("кино")
+            return EventCategory.CINEMA, list(dict.fromkeys(tags))
+        elif any(w in combined for w in ["концерт", "оркестр", "филармон", "музык", "песн", "хор", "жыры", "сольный", "тур", "гастроли", "stand up", "стендап", "трибьют", "рок", "рэп", "хип-хоп", "дискотек"]):
+            return EventCategory.CONCERT, list(dict.fromkeys(tags))
+        elif any(w in combined for w in ["спектакл", "театр", "драм", "комеди", "балет", "опер", "мюзикл", "пьес"]):
+            return EventCategory.THEATER, list(dict.fromkeys(tags))
+        elif any(w in combined for w in ["выставк", "музей", "галере", "экспозици", "картин", "живопис"]):
+            return EventCategory.EXHIBITION, list(dict.fromkeys(tags))
         elif any(w in combined for w in ["фестивал", "ярмарк", "праздник"]):
-            return EventCategory.FESTIVAL, tags
-        elif any(w in combined for w in ["кино", "фильм", "кинопоказ"]):
-            return EventCategory.CINEMA, tags
-        elif any(w in combined for w in ["экскурси", "тур", "поездк"]):
-            return EventCategory.EXCURSION, tags
+            return EventCategory.FESTIVAL, list(dict.fromkeys(tags))
+        elif any(w in combined for w in ["экскурси", "поездк", "гид", "пешеходн"]):
+            return EventCategory.EXCURSION, list(dict.fromkeys(tags))
 
-        return EventCategory.OTHER, tags
+        return EventCategory.OTHER, list(dict.fromkeys(tags))
 
 
 normalization_service = NormalizationService()

@@ -89,6 +89,8 @@ class KassirCrawler(BaseCrawler):
     categories: list[tuple[str, EventCategory]] = [
         ("teatr", EventCategory.THEATER),
         ("koncert", EventCategory.CONCERT),
+        ("sport", EventCategory.OTHER),
+        ("kino", EventCategory.CINEMA),
         ("detyam", EventCategory.THEATER),
         ("shou", EventCategory.OTHER),
         ("vystavki", EventCategory.EXHIBITION),
@@ -120,7 +122,7 @@ class KassirCrawler(BaseCrawler):
                         if not isinstance(item, dict):
                             continue
                         item_type = str(item.get("@type") or "")
-                        if item_type not in ("Event", "TheaterEvent", "MusicEvent", "DanceEvent", "Festival"):
+                        if not any(t in item_type for t in ("Event", "TheaterEvent", "MusicEvent", "DanceEvent", "Festival", "SportsEvent", "ScreeningEvent", "ExhibitionEvent")):
                             continue
 
                         title = str(item.get("name") or "").strip()
@@ -185,9 +187,35 @@ class KassirCrawler(BaseCrawler):
 
                         desc = str(item.get("description") or title).strip()
 
+                        # Вычисление реальной категории по ссылке и названию
+                        actual_cat = default_cat
+                        tags: list[str] = []
+                        u_lower = (event_url or "").lower()
+                        t_lower = f"{title} {desc}".lower()
+
+                        if "/sport/" in u_lower or any(k in t_lower for k in ("хоккей", "футбол", "бокс", "волейбол", "баскетбол", "кхл", "салават юлаев")):
+                            actual_cat = EventCategory.OTHER
+                            tags.append("спорт")
+                        elif "/kino/" in u_lower or any(k in t_lower for k in ("кино", "фильм", "мультфильм")):
+                            actual_cat = EventCategory.CINEMA
+                            tags.append("кино")
+                        elif "/koncert/" in u_lower or any(k in t_lower for k in ("концерт", "музык", "оркестр", "певец", "джаз", "рок", "рэп", "хор", "жыры", "stand up", "стендап")):
+                            actual_cat = EventCategory.CONCERT
+                            tags.append("концерт")
+                        elif "/vystavki/" in u_lower or "/muzey/" in u_lower or any(k in t_lower for k in ("выставка", "музей", "экспозиция")):
+                            actual_cat = EventCategory.EXHIBITION
+                            tags.append("выставка")
+                        elif "/teatr/" in u_lower or any(k in t_lower for k in ("спектакль", "театр", "балет", "опера")):
+                            actual_cat = EventCategory.THEATER
+                            tags.append("театр")
+                        elif "/festivali/" in u_lower:
+                            actual_cat = EventCategory.FESTIVAL
+                            tags.append("фестиваль")
+
                         results.append({
                             "title": title,
-                            "category": default_cat.value,
+                            "category": actual_cat.value,
+                            "tags": tags,
                             "date_start": raw_start,
                             "date_end": raw_end,
                             "city": city,

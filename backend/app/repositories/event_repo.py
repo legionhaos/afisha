@@ -117,10 +117,23 @@ class EventRepository:
             topic_clauses = []
             for term in terms:
                 ts_query = func.plainto_tsquery('russian', term)
+                clean_term = re.sub(r'[^a-zA-Zа-яА-Я0-9]', '', term)
                 if term in {'хоккей', 'hockey'}:
                     topic_clauses.extend([
                         func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
                         func.lower(Event.description).op('~*')(r'(^|[^[:alnum:]])хоккей[[:alpha:]]*([^[:alnum:]]|$)'),
+                        Event.tags.contains(['хоккей']),
+                    ])
+                if term in {'кино', 'фильм', 'фильмы', 'кинотеатр'}:
+                    topic_clauses.extend([
+                        Event.category == EventCategory.CINEMA,
+                        func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])(кино|фильм)[[:alpha:]]*([^[:alnum:]]|$)'),
+                        Event.tags.contains(['кино']),
+                    ])
+                if term in {'футбол', 'football'}:
+                    topic_clauses.extend([
+                        func.lower(Event.title).op('~*')(r'(^|[^[:alnum:]])футбол[[:alpha:]]*([^[:alnum:]]|$)'),
+                        Event.tags.contains(['футбол']),
                     ])
                 topic_clauses.extend([
                     Event.tsv.op('@@')(ts_query),
@@ -128,6 +141,9 @@ class EventRepository:
                     func.lower(Event.description).op('~*')(rf'(^|[^[:alnum:]]){re.escape(term)}([^[:alnum:]]|$)'),
                     Event.tags.contains([term]),
                 ])
+                if clean_term:
+                    prefix_ts = func.to_tsquery('russian', f"{clean_term}:*")
+                    topic_clauses.append(Event.tsv.op('@@')(prefix_ts))
             if topic_clauses:
                 clauses.append(or_(*topic_clauses))
 
@@ -140,7 +156,7 @@ class EventRepository:
             score = func.ts_rank(Event.tsv, tsquery) + similarity
             text_ranked = (
                 select(Event.id.label("id"), func.row_number().over(order_by=(score.desc(), Event.id)).label("rank"))
-                .where(*clauses, or_(Event.tsv.op("@@")(tsquery), Event.normalized_title.op("%")(normalized)))
+                .where(*clauses)
                 .cte("text_search")
             )
         if query_embedding is not None:
