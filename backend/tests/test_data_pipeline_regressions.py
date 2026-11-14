@@ -319,21 +319,26 @@ async def test_similar_events_require_category_or_close_vector():
 
 
 @pytest.mark.asyncio
-async def test_replay_pagination_uses_stable_timestamp_and_id_cursor():
+async def test_replay_streams_one_stable_statement_and_closes_cursor():
     session = AsyncMock()
     timestamp = datetime(2027, 1, 1, tzinfo=timezone.utc)
     records = [SimpleNamespace(created_at=timestamp, id=uuid4()) for _ in range(3)]
-    responses = []
-    for batch in (records[:2], records[2:], []):
-        result = MagicMock()
-        result.scalars.return_value.all.return_value = batch
-        responses.append(result)
-    session.execute.side_effect = responses
+
+    async def partitions(size):
+        assert size == 2
+        yield records[:2]
+        yield records[2:]
+
+    result = MagicMock()
+    result.partitions.side_effect = partitions
+    result.close = AsyncMock()
+    session.stream_scalars.return_value = result
     batches = [batch async for batch in RawRecordRepository(session).list_all_for_replay(batch_size=2)]
     assert batches == [records[:2], records[2:]]
-    sql = str(session.execute.await_args_list[1].args[0].compile(dialect=postgresql.dialect()))
-    assert "raw_event_records.created_at, raw_event_records.id" in sql
+    sql = str(session.stream_scalars.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "raw_event_records.created_at ASC, raw_event_records.id ASC" in sql
     assert " OFFSET " not in sql
+    result.close.assert_awaited_once()
 
 
 def test_hard_duration_filter_excludes_unknown_duration():
