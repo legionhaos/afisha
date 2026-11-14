@@ -222,6 +222,8 @@ class ImportService:
                 bounds = [Decimal(str(value).strip()) for value in (low, high)]
                 if any(not value.is_finite() or value != value.to_integral_value() for value in bounds):
                     raise ValueError
+                if any(value < 0 or value > 2_147_483_647 for value in bounds):
+                    raise ValueError
                 price_min, price_max = (int(value) for value in bounds)
             except (InvalidOperation, ValueError):
                 raise ValueError("Цена должна быть целым числом рублей") from None
